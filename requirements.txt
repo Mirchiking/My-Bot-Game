@@ -1,0 +1,10 @@
+python-telegram-bot==20.6
+pymongo
+dnspython
+apscheduler
+pytz
+python-telegram-bot
+pymongo
+python-dotenv
+flask
+gunicorn
