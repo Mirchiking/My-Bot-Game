@@ -14,6 +14,7 @@ from telegram.ext import (
 )
 
 # --- INTERNAL MODULES ---
+# Make sure ye sab files tumhare project folder mein मौजूद ho
 import SETTINGS_AUR_PRICES as settings
 import DATABASE_MEMORY as db
 import MANAGER_HANDLE as manager
@@ -22,25 +23,24 @@ import ADMIN_POWER as admin
 import BANK_AUR_SHOP as bank
 import DIALOGUES_AUR_RULES as dialogues
 
-# --- LOGGING CONFIGURATION (QUIET MODE) ---
-# Logs ko clean rakhega, sirf errors dikhayega
+# --- LOGGING CONFIGURATION (VERY IMPORTANT) ---
+# Ye logs Render dashboard par dikhenge
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", 
-    level=logging.WARNING 
+    level=logging.INFO 
 )
-
-# External libraries ko chup kara rahe hain
-logging.getLogger("werkzeug").setLevel(logging.ERROR)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("telegram").setLevel(logging.WARNING)
-
 logger = logging.getLogger(__name__)
 
 # --- FLASK APP ---
 app = Flask(__name__)
 
 @app.route('/')
-def home(): return "🤖 MYSTERY HUNT IS ACTIVE"
+def home(): 
+    return "🤖 MYSTERY HUNT IS ACTIVE & RUNNING"
+
+@app.route('/health')
+def health_check():
+    return "OK", 200
 
 # --- GAME ROUTES ---
 @app.route('/game/<name>')
@@ -55,7 +55,7 @@ def serve_premium(name):
     if name in valid_games: return render_template(f'{name}.html')
     return "Premium Game Not Found", 404
 
-# --- API ENDPOINTS (Secured) ---
+# --- API ENDPOINTS ---
 @app.route('/api/deduct_fee', methods=['POST'])
 def api_deduct():
     try:
@@ -65,21 +65,18 @@ def api_deduct():
         game = data.get('game_name')
 
         user = db.get_user(user_id, "")
-        
-        # SECURITY CHECK 1: User Exist hai?
         if not user: return jsonify({"status": "fail", "msg": "User unknown"})
         
-        # SECURITY CHECK 2: User Banned to nahi?
         if user.get('is_banned', False):
             return jsonify({"status": "fail", "msg": "🚫 YOU ARE BANNED!"})
 
-        # Balance Check
         if user['xp'] >= amount:
             db.update_user(user_id, None, inc_dict={"xp": -amount, "stats.games_played": 1}, transaction=f"Played {game}")
             return jsonify({"status": "success", "new_balance": user['xp'] - amount})
         else:
             return jsonify({"status": "fail", "msg": "Insufficient Funds"})
     except Exception as e:
+        logger.error(f"API Deduct Error: {e}")
         return jsonify({"status": "error", "msg": str(e)})
 
 @app.route('/api/claim_win', methods=['POST'])
@@ -92,18 +89,15 @@ def api_claim():
 
         user = db.get_user(user_id, "")
         
-        # SECURITY CHECK: Banned user cannot claim win
         if user.get('is_banned', False):
             return jsonify({"status": "fail", "msg": "BANNED"})
         
-        # Double Tap Logic (Agar user ne powerup kharida hai)
         inv = user.get('inventory', {})
         if inv.get('double', 0) > 0:
             amount = amount * 2
             inv['double'] -= 1
             db.update_user(user_id, {"inventory": inv}, transaction="Used Double Tap")
 
-        # Loan Auto-Deduct (Loan pehle katega)
         loan = user.get('loan_amount', 0)
         final_payout = amount
         deducted = 0
@@ -118,25 +112,27 @@ def api_claim():
                 final_payout = 0
                 db.update_user(user_id, None, inc_dict={"loan_amount": -deducted, "xp": -deducted})
 
-        # Final Update
         db.update_user(user_id, None, inc_dict={"xp": amount, "stats.wins": 1}, transaction=f"Won {game_name}")
         
-        # Alert User
         msg = f"{random.choice(dialogues.TEXTS['win_hype'])}\n💰 **Won:** {amount} XP"
         if deducted > 0: msg += f"\n📉 **Loan Cut:** {deducted} XP"
         
         send_alert(user_id, msg)
         return jsonify({"status": "success"})
     except Exception as e:
+        logger.error(f"API Claim Error: {e}")
         return jsonify({"status": "error", "msg": str(e)})
 
 def send_alert(chat_id, text):
     try:
         requests.post(f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"})
-    except: pass
+    except Exception as e:
+        logger.error(f"Alert Error: {e}")
 
 def run_flask():
+    # Render PORT environment variable set karta hai
     port = int(os.environ.get("PORT", 5000))
+    print(f"🌍 Starting Flask on PORT: {port}", flush=True)
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 # --- TELEGRAM HANDLERS ---
@@ -144,45 +140,36 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
     
-    # Manager
-    if data == 'main_menu': await manager.show_main_menu(update, context, db.get_user(query.from_user.id, ""))
-    elif data == 'show_profile': await manager.show_profile(update, context)
-    
-    # Games Menu
-    elif data == 'menu_games': await games.game_menu(update, context)
-    elif data == 'menu_bowl': await games.menu_bowl(update, context)
-    elif data == 'menu_horse': await games.menu_horse(update, context)
-    elif data.startswith('rules|'): await games.show_rules(update, context)
-    
-    # Shop & Bank
-    elif data == 'menu_shop': await bank.open_shop_menu(update, context)
-    elif data.startswith('shop_buy|') or data == 'show_upi': await bank.handle_shop_buy(update, context)
-    
-    elif data == 'menu_bank': await bank.open_bank_menu(update, context)
-    elif data.startswith('bank_act|'): await bank.handle_bank_action(update, context)
-    
-    # Admin Buttons
-    elif data == 'admin_dashboard': await admin.open_admin_panel(update, context)
-    elif data == 'admin_player_view': await manager.show_main_menu(update, context, db.get_user(query.from_user.id, ""))
-    elif data.startswith('admin_'): await admin.handle_admin_buttons(update, context)
-    
-    # Registration
-    elif data.startswith('reg_gender|'): await manager.handle_gender_selection(update, context)
-    else: await query.answer("⚠️ Unknown Button")
+    try:
+        if data == 'main_menu': await manager.show_main_menu(update, context, db.get_user(query.from_user.id, ""))
+        elif data == 'show_profile': await manager.show_profile(update, context)
+        elif data == 'menu_games': await games.game_menu(update, context)
+        elif data == 'menu_bowl': await games.menu_bowl(update, context)
+        elif data == 'menu_horse': await games.menu_horse(update, context)
+        elif data.startswith('rules|'): await games.show_rules(update, context)
+        elif data == 'menu_shop': await bank.open_shop_menu(update, context)
+        elif data.startswith('shop_buy|') or data == 'show_upi': await bank.handle_shop_buy(update, context)
+        elif data == 'menu_bank': await bank.open_bank_menu(update, context)
+        elif data.startswith('bank_act|'): await bank.handle_bank_action(update, context)
+        elif data == 'admin_dashboard': await admin.open_admin_panel(update, context)
+        elif data == 'admin_player_view': await manager.show_main_menu(update, context, db.get_user(query.from_user.id, ""))
+        elif data.startswith('admin_'): await admin.handle_admin_buttons(update, context)
+        elif data.startswith('reg_gender|'): await manager.handle_gender_selection(update, context)
+        else: await query.answer("⚠️ Unknown Button")
+    except Exception as e:
+        logger.error(f"Callback Error: {e}")
 
 async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # WebApp Data (Horse Game)
-    if update.effective_message.web_app_data:
-        data = update.effective_message.web_app_data.data
-        if data.startswith("bet_horse"):
-            await games.process_horse_bet(update, context, data)
-        return
-
-    # Admin Text Input Logic
-    if await admin.process_admin_text_input(update, context): return
-    
-    # New User Registration
-    if await manager.handle_registration_input(update, context): return
+    try:
+        if update.effective_message.web_app_data:
+            data = update.effective_message.web_app_data.data
+            if data.startswith("bet_horse"):
+                await games.process_horse_bet(update, context, data)
+            return
+        if await admin.process_admin_text_input(update, context): return
+        if await manager.handle_registration_input(update, context): return
+    except Exception as e:
+        logger.error(f"Message Handler Error: {e}")
 
 async def group_join_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for member in update.message.new_chat_members:
@@ -197,23 +184,43 @@ async def group_join_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🆘 **HELP MENU**\n\n/start - Main Menu\n/result MARKET NUM - Declare Result (Admin Only)")
 
+# --- MAIN EXECUTION ---
 if __name__ == '__main__':
-    print("🌐 STARTING WEB SERVER...")
+    # 1. System Check Logs (Render Logs mein dikhenge)
+    print("------------------------------------------------", flush=True)
+    print("🚀 SYSTEM STARTUP INITIATED", flush=True)
+    
+    # 2. Token Check
+    token = settings.BOT_TOKEN
+    if not token:
+        print("❌ CRITICAL ERROR: BOT_TOKEN is missing in settings!", flush=True)
+        print("ℹ️ Check your Render Environment Variables.", flush=True)
+        sys.exit(1) # Stop app to avoid confusion
+    else:
+        # Security: Token ka last 4 digit print karke verify karo
+        print(f"✅ BOT_TOKEN Loaded (Ends with: ...{token[-4:]})", flush=True)
+
+    # 3. Start Flask (Web Server)
+    # Thread mein chala rahe hain taki bot block na ho
     t = threading.Thread(target=run_flask)
     t.daemon = True
     t.start()
     
-    print("🚀 STARTING BOT POLLING...")
-    app_bot = ApplicationBuilder().token(settings.BOT_TOKEN).build()
-    
-    # Commands
-    app_bot.add_handler(CommandHandler('start', manager.start_command))
-    app_bot.add_handler(CommandHandler('help', help_command))
-    app_bot.add_handler(CommandHandler('result', admin.resolve_market_command)) # <--- YE MISSING THA
-    
-    # Handlers
-    app_bot.add_handler(CallbackQueryHandler(handle_callback))
-    app_bot.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, group_join_alert))
-    app_bot.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_msg))
-    
-    app_bot.run_polling()
+    # 4. Start Telegram Bot
+    print("🤖 Connecting to Telegram...", flush=True)
+    try:
+        app_bot = ApplicationBuilder().token(token).build()
+        
+        app_bot.add_handler(CommandHandler('start', manager.start_command))
+        app_bot.add_handler(CommandHandler('help', help_command))
+        app_bot.add_handler(CommandHandler('result', admin.resolve_market_command))
+        
+        app_bot.add_handler(CallbackQueryHandler(handle_callback))
+        app_bot.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, group_join_alert))
+        app_bot.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_msg))
+        
+        print("✅ Polling Started! Bot should be live.", flush=True)
+        app_bot.run_polling()
+        
+    except Exception as e:
+        print(f"❌ BOT CRASHED: {e}", flush=True)
