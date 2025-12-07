@@ -4,6 +4,7 @@ import datetime
 import logging
 import json
 import requests # Added for safe API calls
+import os # REQUIRED for Render Port
 
 from flask import Flask, render_template, request, jsonify
 from telegram import Update
@@ -129,8 +130,10 @@ def api_claim():
         return jsonify({"status": "error", "message": str(e)})
 
 def run_flask():
-    # Use 0.0.0.0 for external access (Render/VPS)
-    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    """Flask Server ko alag thread mein chalata hai"""
+    # Render environment se PORT leta hai, warna 5000 use karega
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 # ==============================================================================
 #  🤖 TELEGRAM BOT LOGIC
