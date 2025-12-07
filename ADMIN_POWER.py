@@ -20,7 +20,7 @@ async def open_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("✂️ CUT XP", callback_data='admin_ask|cut_xp')],
         [InlineKeyboardButton("👤 CHECK USER", callback_data='admin_ask|check_user'),
          InlineKeyboardButton("🚫 BAN USER", callback_data='admin_ask|ban_user')],
-        [InlineKeyboardButton("🐎 HORSE RESULT", callback_data='admin_act|set_horse')],
+        [InlineKeyboardButton("🐎 HORSE RESULT (Button)", callback_data='admin_act|set_horse')],
         [InlineKeyboardButton("🎛 PLAYER MODE", callback_data='admin_player_view')]
     ]
     await query.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
@@ -55,24 +55,12 @@ async def process_admin_text_input(update: Update, context: ContextTypes.DEFAULT
     
     txt = update.message.text.strip()
     
-    # Handle Horse Result
+    # Handle Horse Result via Text Input (Flow A)
     if action == 'resolve_horse':
         market = context.user_data.get('resolving_market')
         try:
             win_num = int(txt)
-            bets = db.get_pending_bets("Horse", market)
-            count = 0
-            for bet in bets:
-                uid = bet['user_id']
-                if bet['selection'] == win_num:
-                    amt = bet['amount'] * settings.PAYOUTS['horse_win']
-                    db.update_user(uid, None, inc_dict={"xp": amt}, transaction=f"Won Horse {market}")
-                    db.mark_bet_processed(bet['_id'], "won")
-                    await context.bot.send_message(uid, f"🐎 **JACKPOT!**\n{market} Result: {win_num}\nWon: {amt} XP")
-                    count += 1
-                else:
-                    db.mark_bet_processed(bet['_id'], "lost")
-            await update.message.reply_text(f"✅ Result Declared: {market} -> {win_num}\n🏆 Winners: {count}")
+            await declare_horse_result(context.bot, market, win_num, update)
         except ValueError:
             await update.message.reply_text("❌ Number daal bhai!")
         context.user_data['admin_action'] = None
@@ -92,7 +80,7 @@ async def process_admin_text_input(update: Update, context: ContextTypes.DEFAULT
             
             if action == 'check_user':
                 u = db.get_user(target_id, "")
-                await update.message.reply_text(f"🕵️ **REPORT:**\nID: {target_id}\nXP: {u['xp']}\nBank: {u['bank']}\nInv: {u['inventory']}")
+                await update.message.reply_text(f"🕵️ **REPORT:**\nID: {target_id}\nXP: {u['xp']}\nBank: {u['bank']}\nInv: {u.get('inventory', {})}\nBanned: {u.get('is_banned', False)}")
                 context.user_data['admin_action'] = None
             elif action == 'ban_user':
                 db.update_user(target_id, {"is_banned": True})
@@ -121,3 +109,61 @@ async def process_admin_text_input(update: Update, context: ContextTypes.DEFAULT
         await update.message.reply_text("❌ Number likh bhai, English nahi.")
         
     return True
+
+# --- FUNCTIONS TO RESOLVE RESULTS ---
+
+async def resolve_market_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles /result MARKET NUMBER command
+    """
+    if not is_admin(update.effective_user.id): return
+
+    try:
+        if len(context.args) < 2:
+            await update.message.reply_text("⚠️ **Usage:** `/result MARKET NUMBER`\nEx: `/result DISAWAR 45`", parse_mode='Markdown')
+            return
+
+        market = context.args[0].upper()
+        
+        if market not in settings.MARKETS:
+            await update.message.reply_text(f"❌ Invalid Market. Available: {', '.join(settings.MARKETS.keys())}")
+            return
+
+        try:
+            win_num = int(context.args[1])
+        except ValueError:
+            await update.message.reply_text("❌ Number valid nahi hai.")
+            return
+
+        await declare_horse_result(context.bot, market, win_num, update)
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+async def declare_horse_result(bot, market, win_num, update=None):
+    bets = db.get_pending_bets("Horse", market)
+    
+    if not bets:
+        if update: await update.message.reply_text(f"⚠️ {market} mein koi bets pending nahi hain.")
+        return
+
+    count = 0
+    total_payout = 0
+
+    for bet in bets:
+        uid = bet['user_id']
+        if bet['selection'] == win_num:
+            amt = bet['amount'] * settings.PAYOUTS['horse_win']
+            db.update_user(uid, None, inc_dict={"xp": amt}, transaction=f"Won Horse {market}")
+            db.mark_bet_processed(bet['_id'], "won")
+            
+            try: await bot.send_message(uid, f"🐎 **HORSE WINNER!**\nMarket: {market}\nLucky Number: {win_num}\n💰 Won: {amt} XP")
+            except: pass
+            
+            count += 1
+            total_payout += amt
+        else:
+            db.mark_bet_processed(bet['_id'], "lost")
+    
+    msg = f"✅ **RESULT DECLARED: {market}**\n🏆 Number: {win_num}\n👥 Winners: {count}\n💰 Total Paid: {total_payout} XP"
+    if update: await update.message.reply_text(msg)
