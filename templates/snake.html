@@ -6,23 +6,25 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body { background: #000; color: #0f0; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; font-family: monospace; overflow: hidden; touch-action: none; }
-        canvas { border: 2px solid #0f0; box-shadow: 0 0 20px #0f0; background: #111; }
-        h1 { text-shadow: 0 0 10px #0f0; margin-bottom: 10px; }
-        #score { font-size: 24px; color: yellow; }
-        button { background: #0f0; color: #000; border: none; padding: 10px 20px; font-size: 18px; cursor: pointer; margin-top: 10px; border-radius: 5px; }
+        canvas { border: 2px solid #0f0; box-shadow: 0 0 20px #0f0; background: #111; display: none; }
+        #startScreen { text-align: center; }
+        button { background: #0f0; color: #000; border: none; padding: 15px 30px; font-size: 20px; font-weight: bold; cursor: pointer; border-radius: 5px; margin-top: 20px; }
     </style>
 </head>
 <body>
-    <h1>NEON SNAKE 🐍</h1>
-    <div id="score">Score: 0</div>
+    <div id="startScreen">
+        <h1>🐍 NEON SNAKE</h1>
+        <p>Fee: 20 XP | Win: 2 XP/Apple</p>
+        <button onclick="payAndStart()">PLAY (20 XP)</button>
+    </div>
+    
+    <div id="scoreBox" style="display:none; color:yellow; font-size:20px; margin-bottom:10px;">Score: 0</div>
     <canvas id="game" width="300" height="300"></canvas>
-    <button onclick="startGame()">RESTART</button>
 
     <script>
         const tg = window.Telegram.WebApp;
         tg.expand();
         const userId = tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : 0;
-
         const canvas = document.getElementById('game');
         const ctx = canvas.getContext('2d');
         const box = 15;
@@ -32,69 +34,65 @@
         let d;
         let game;
 
+        function payAndStart() {
+            tg.MainButton.showProgress();
+            fetch('/api/deduct_fee', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ user_id: userId, amount: 20, game_name: 'Snake' })
+            })
+            .then(res => res.json())
+            .then(data => {
+                tg.MainButton.hideProgress();
+                if(data.status === 'success') {
+                    document.getElementById('startScreen').style.display = 'none';
+                    canvas.style.display = 'block';
+                    document.getElementById('scoreBox').style.display = 'block';
+                    startGame();
+                } else {
+                    tg.showAlert("❌ " + data.msg);
+                }
+            });
+        }
+
         function startGame() {
             snake = [{x: 9 * box, y: 10 * box}];
             score = 0;
             d = null;
-            document.getElementById('score').innerText = "Score: " + score;
-            food = {
-                x: Math.floor(Math.random() * 19 + 1) * box,
-                y: Math.floor(Math.random() * 19 + 1) * box
-            };
+            document.getElementById('scoreBox').innerText = "Score: " + score;
+            food = { x: Math.floor(Math.random()*19+1)*box, y: Math.floor(Math.random()*19+1)*box };
             if(game) clearInterval(game);
             game = setInterval(draw, 100);
         }
 
-        document.addEventListener("keydown", direction);
-        
-        // Touch Controls
-        let touchStartX = 0;
-        let touchStartY = 0;
-        document.addEventListener('touchstart', function(e) {
-            touchStartX = e.changedTouches[0].screenX;
-            touchStartY = e.changedTouches[0].screenY;
-        }, {passive: false});
-        
-        document.addEventListener('touchend', function(e) {
-            let touchEndX = e.changedTouches[0].screenX;
-            let touchEndY = e.changedTouches[0].screenY;
-            handleSwipe(touchStartX, touchStartY, touchEndX, touchEndY);
-        }, {passive: false});
+        // TOUCH CONTROLS (Swipe)
+        let tsX = 0, tsY = 0;
+        document.addEventListener('touchstart', e => { tsX = e.touches[0].clientX; tsY = e.touches[0].clientY; }, {passive: false});
+        document.addEventListener('touchmove', e => { e.preventDefault(); }, {passive: false}); // Prevent Scroll
+        document.addEventListener('touchend', e => {
+            let teX = e.changedTouches[0].clientX;
+            let teY = e.changedTouches[0].clientY;
+            let diffX = tsX - teX;
+            let diffY = tsY - teY;
 
-        function handleSwipe(sx, sy, ex, ey) {
-            if (Math.abs(sx - ex) > Math.abs(sy - ey)) {
-                if (ex > sx && d != "LEFT") d = "RIGHT";
-                else if (ex < sx && d != "RIGHT") d = "LEFT";
+            if(Math.abs(diffX) > Math.abs(diffY)) {
+                if(diffX > 0 && d != "RIGHT") d = "LEFT";
+                else if(diffX < 0 && d != "LEFT") d = "RIGHT";
             } else {
-                if (ey > sy && d != "UP") d = "DOWN";
-                else if (ey < sy && d != "DOWN") d = "UP";
+                if(diffY > 0 && d != "DOWN") d = "UP";
+                else if(diffY < 0 && d != "UP") d = "DOWN";
             }
-        }
-
-        function direction(event) {
-            if(event.keyCode == 37 && d != "RIGHT") d = "LEFT";
-            else if(event.keyCode == 38 && d != "DOWN") d = "UP";
-            else if(event.keyCode == 39 && d != "LEFT") d = "RIGHT";
-            else if(event.keyCode == 40 && d != "UP") d = "DOWN";
-        }
+        });
 
         function draw() {
-            ctx.fillStyle = "#111";
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            for(let i = 0; i < snake.length; i++) {
-                ctx.fillStyle = (i == 0) ? "#0f0" : "#050"; 
+            ctx.fillStyle = "#111"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            for(let i=0; i<snake.length; i++) {
+                ctx.fillStyle = (i==0)? "#0f0" : "#050";
                 ctx.fillRect(snake[i].x, snake[i].y, box, box);
-                ctx.strokeStyle = "#000";
-                ctx.strokeRect(snake[i].x, snake[i].y, box, box);
             }
+            ctx.fillStyle = "red"; ctx.fillRect(food.x, food.y, box, box);
 
-            ctx.fillStyle = "red";
-            ctx.fillRect(food.x, food.y, box, box);
-
-            let snakeX = snake[0].x;
-            let snakeY = snake[0].y;
-
+            let snakeX = snake[0].x; let snakeY = snake[0].y;
             if(d == "LEFT") snakeX -= box;
             if(d == "UP") snakeY -= box;
             if(d == "RIGHT") snakeX += box;
@@ -102,46 +100,35 @@
 
             if(snakeX == food.x && snakeY == food.y) {
                 score++;
-                document.getElementById('score').innerText = "Score: " + score;
-                food = {
-                    x: Math.floor(Math.random() * 19 + 1) * box,
-                    y: Math.floor(Math.random() * 19 + 1) * box
-                };
-            } else {
-                snake.pop();
-            }
+                document.getElementById('scoreBox').innerText = "Score: " + score;
+                food = { x: Math.floor(Math.random()*19+1)*box, y: Math.floor(Math.random()*19+1)*box };
+            } else { snake.pop(); }
 
             let newHead = { x: snakeX, y: snakeY };
-
-            if(snakeX < 0 || snakeX > canvas.width || snakeY < 0 || snakeY > canvas.height || collision(newHead, snake)) {
+            if(snakeX < 0 || snakeX >= canvas.width || snakeY < 0 || snakeY >= canvas.height || collision(newHead, snake)) {
                 clearInterval(game);
-                gameOver(score);
+                gameOver();
             }
             snake.unshift(newHead);
         }
-
         function collision(head, array) {
-            for(let i = 0; i < array.length; i++) {
-                if(head.x == array[i].x && head.y == array[i].y) return true;
-            }
+            for(let i=0; i<array.length; i++) { if(head.x == array[i].x && head.y == array[i].y) return true; }
             return false;
         }
-
-        function gameOver(finalScore) {
-            // Winning Logic: 10 XP per point (Just Example)
-            let winAmount = finalScore * 2; 
-            if(winAmount > 0) {
+        function gameOver() {
+            let win = score * 2;
+            if(win > 0) {
                 fetch('/api/claim_win', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ user_id: userId, amount: winAmount, game_name: 'Snake' })
+                    body: JSON.stringify({ user_id: userId, amount: win, game_name: 'Snake' })
                 });
-                tg.showAlert(`Game Over! You Won ${winAmount} XP`);
+                tg.showAlert(`🐍 Game Over!\n🍎 Score: ${score}\n💰 Won: ${win} XP`);
             } else {
-                tg.showAlert("Game Over! Try Harder!");
+                tg.showAlert("🐍 Game Over! Kuch nahi mila.");
             }
+            tg.close();
         }
-        startGame();
     </script>
 </body>
 </html>

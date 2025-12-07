@@ -2,13 +2,8 @@ python-telegram-bot==21.9
 pymongo
 python-dotenv
 flask
-gunicorn
-anyio
-pytz
-python-telegram-bot==21.9
-pymongo
-certifi
-python-dotenv
-flask
 requests
 pytz
+certifi
+gunicorn
+anyio

@@ -9,11 +9,10 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 DB_NAME = "MysteryHuntProDB"
 
-# UPI ID for Payment (Monospace ke liye code mein use hoga)
+# UPI ID
 ADMIN_UPI = os.getenv("ADMIN_UPI", "sha.839@ptaxis")
 
-# Web App URL (Must be HTTPS - Render/Heroku URL)
-# Example: https://mystery-bot.onrender.com
+# Web App URL (HTTPS Required)
 WEB_APP_URL = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:5000")
 
 # --- 2. ADMIN CONFIG ---
@@ -22,25 +21,32 @@ try:
 except ValueError:
     OWNER_ID = 0
 
+# List of Admins (Isme aur IDs comma laga kar add kar sakte ho)
 ADMIN_IDS = [OWNER_ID] 
 
 # --- 3. ECONOMY & PRICES ---
-REAL_MONEY_RATE = 10.0  # ₹10 = 100 XP
-
 PRICES = {
     'hint': 50,
-    'shield': 50,
-    'fifty': 50,      # New
-    'skip': 50,       # New
-    'double': 75,     # New (Double Tap)
-    'bowl_ball': 100,
+    'shield': 100,
+    'fifty': 50,
+    'skip': 50,
+    'double': 150,
+    'snake_fee': 20,
+    'slots_fee': 50,
+    'dice_fee': 30,
+    'quiz_fee': 20,
+    'bowl_fee': 100,
     'horse_min_bet': 50
 }
 
-# --- 4. PAYOUTS ---
+# --- 4. PAYOUTS (Multipliers) ---
 PAYOUTS = {
-    'bowl_jackpot': 90,
-    'horse_win': 90
+    'bowl_jackpot': 90, # 90x
+    'horse_win': 90,    # 90x
+    'slots_win': 2,     # 2x
+    'slots_jackpot': 5, # 5x
+    'dice_win': 5,      # 5x
+    'snake_per_point': 2 # 2 XP per apple
 }
 
 # --- 5. TIME & MARKETS (IST) ---

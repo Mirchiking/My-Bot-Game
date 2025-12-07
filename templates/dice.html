@@ -4,22 +4,28 @@
     <title>Neon Dice</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { background: #000; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; margin: 0; }
+        body { background: #000; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; overflow: hidden; }
         .scene { width: 100px; height: 100px; perspective: 600px; margin-bottom: 50px; }
-        .cube { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transition: transform 1s; }
-        .face { position: absolute; width: 100px; height: 100px; border: 2px solid #0f0; background: rgba(0, 255, 0, 0.1); box-shadow: 0 0 20px #0f0; display: flex; align-items: center; justify-content: center; font-size: 40px; font-weight: bold; color: #0f0; }
-        .front  { transform: rotateY(0deg) translateZ(50px); }
-        .back   { transform: rotateY(180deg) translateZ(50px); }
-        .right  { transform: rotateY(90deg) translateZ(50px); }
-        .left   { transform: rotateY(-90deg) translateZ(50px); }
-        .top    { transform: rotateX(90deg) translateZ(50px); }
+        .cube { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transition: transform 0.1s linear; } 
+        .face { position: absolute; width: 100px; height: 100px; border: 2px solid #0f0; background: rgba(0, 255, 0, 0.2); font-size: 40px; display: flex; align-items: center; justify-content: center; color: #0f0; }
+        .front { transform: rotateY(0deg) translateZ(50px); }
+        .back { transform: rotateY(180deg) translateZ(50px); }
+        .right { transform: rotateY(90deg) translateZ(50px); }
+        .left { transform: rotateY(-90deg) translateZ(50px); }
+        .top { transform: rotateX(90deg) translateZ(50px); }
         .bottom { transform: rotateX(-90deg) translateZ(50px); }
-        button { background: #0f0; border: none; padding: 15px 40px; font-size: 20px; border-radius: 30px; cursor: pointer; box-shadow: 0 0 15px #0f0; font-weight: bold; }
-        h2 { color: #0f0; text-shadow: 0 0 10px #0f0; }
+        
+        .overlay { position: fixed; width:100%; height:100%; background:black; display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:10; }
+        button { background: #0f0; border:none; padding:15px 30px; font-size:20px; font-weight:bold; cursor:pointer; }
     </style>
 </head>
 <body>
-    <h2 id="result">ROLL THE DICE</h2>
+    <div id="startInfo" class="overlay">
+        <h1>🎲 DICE</h1>
+        <p>Fee: 30 XP | Win (4,5,6): 90 XP</p>
+        <button onclick="payAndRoll()">ROLL (30 XP)</button>
+    </div>
+
     <div class="scene">
         <div class="cube" id="cube">
             <div class="face front">1</div>
@@ -30,7 +36,7 @@
             <div class="face bottom">5</div>
         </div>
     </div>
-    <button onclick="rollDice()" id="rollBtn">ROLL</button>
+    <h2 id="status" style="color:#0f0">ROLLING...</h2>
 
     <script>
         const tg = window.Telegram.WebApp;
@@ -38,28 +44,63 @@
         const userId = tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : 0;
         const cube = document.getElementById('cube');
         
-        function rollDice() {
-            document.getElementById('rollBtn').disabled = true;
-            const x = Math.floor(Math.random() * 4) * 90;
-            const y = Math.floor(Math.random() * 4) * 90;
-            const roll = Math.floor(Math.random() * 6) + 1;
+        function payAndRoll() {
+            fetch('/api/deduct_fee', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ user_id: userId, amount: 30, game_name: 'Dice' })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if(data.status === 'success') {
+                    document.getElementById('startInfo').style.display = 'none';
+                    startAnimation();
+                } else tg.showAlert("❌ " + data.msg);
+            });
+        }
+
+        function startAnimation() {
+            let start = Date.now();
+            // 20% Win Chance (Roll 4, 5, 6)
+            let result = (Math.random() < 0.2) ? (Math.floor(Math.random()*3)+4) : (Math.floor(Math.random()*3)+1);
             
-            cube.style.transform = `rotateX(${x + 720}deg) rotateY(${y + 720}deg)`;
+            // Fast rotation interval
+            let spin = setInterval(() => {
+                let x = Math.random() * 3600;
+                let y = Math.random() * 3600;
+                cube.style.transform = `rotateX(${x}deg) rotateY(${y}deg)`;
+                
+                if(Date.now() - start > 10000) { // 10 Sec Stop
+                    clearInterval(spin);
+                    finalize(result);
+                }
+            }, 100);
+        }
+
+        function finalize(res) {
+            // Map number to rotation angles
+            const map = {
+                1: [0, 0], 6: [0, 180], 3: [0, -90], 4: [0, 90], 2: [-90, 0], 5: [90, 0]
+            };
+            let [rx, ry] = map[res];
+            cube.style.transition = "transform 1s ease-out";
+            cube.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg)`;
+            
+            document.getElementById('status').innerText = "RESULT: " + res;
             
             setTimeout(() => {
-                document.getElementById('result').innerText = "YOU ROLLED: " + roll;
-                if(roll >= 4) {
-                    let win = roll * 5; // e.g., Roll 6 = 30 XP
+                if(res >= 4) {
                     fetch('/api/claim_win', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ user_id: userId, amount: win, game_name: 'Dice' })
+                        body: JSON.stringify({ user_id: userId, amount: 90, game_name: 'Dice' })
                     });
-                    tg.showAlert(`🎉 You Won ${win} XP!`);
+                    tg.showAlert(`🎉 JEET GAYE! +90 XP`);
+                } else {
+                    tg.showAlert(`❌ HAAR GAYE! Result: ${res}`);
                 }
-                else tg.showAlert(`❌ You Lost!`);
-                document.getElementById('rollBtn').disabled = false;
-            }, 1000);
+                tg.close();
+            }, 1500);
         }
     </script>
 </body>

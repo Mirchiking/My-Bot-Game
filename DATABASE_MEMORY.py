@@ -9,7 +9,9 @@ try:
     db = client[settings.DB_NAME]
     users_collection = db["users"]
     bets_collection = db["active_bets"]
+    # Indexes for speed
     bets_collection.create_index([("status", 1), ("game", 1)])
+    users_collection.create_index("mobile")
     print("✅ DATABASE: Connected successfully!")
 except Exception as e:
     print(f"❌ DATABASE ERROR: {e}")
@@ -40,14 +42,21 @@ def get_user(user_id, name):
             "stats": {"wins": 0, "loss": 0, "games_played": 0},
             "history": [],
             "joined_date": datetime.datetime.now(),
-            "is_banned": False
+            "is_banned": False,
+            "is_maintenance": False
         }
         users_collection.insert_one(new_user)
         return new_user
 
-    # Auto-fix missing keys
-    if "inventory" not in user:
-        users_collection.update_one({"_id": user_id}, {"$set": {"inventory": {"shield": 0, "hint": 0, "fifty": 0, "skip": 0, "double": 0}}})
+    # Auto-fix missing keys (Migration)
+    updates = {}
+    if "inventory" not in user: updates["inventory"] = {"shield": 0, "hint": 0, "fifty": 0, "skip": 0, "double": 0}
+    if "is_banned" not in user: updates["is_banned"] = False
+    
+    if updates:
+        users_collection.update_one({"_id": user_id}, {"$set": updates})
+        return users_collection.find_one({"_id": user_id})
+        
     return user
 
 def update_user(user_id, update_dict=None, inc_dict=None, transaction=None):
@@ -60,29 +69,19 @@ def update_user(user_id, update_dict=None, inc_dict=None, transaction=None):
         query["$push"] = {
             "history": {
                 "$each": [{"msg": transaction, "date": datetime.datetime.now()}],
-                "$slice": -15 
+                "$slice": -20 # Keep last 20 records
             }
         }
     if query and users_collection is not None:
         users_collection.update_one({"_id": user_id}, query)
 
-def reset_user_data(user_id):
-    """Admin Reset Tool"""
-    if users_collection is None: return
-    users_collection.update_one(
-        {"_id": int(user_id)},
-        {"$set": {
-            "xp": 0, 
-            "bank": 0, 
-            "loan_amount": 0, 
-            "stats": {"wins": 0, "loss": 0, "games_played": 0},
-            "inventory": {"shield": 0, "hint": 0, "fifty": 0, "skip": 0, "double": 0}
-        }}
-    )
-
 def get_all_users_count():
     if users_collection is None: return 0
     return users_collection.count_documents({})
+
+def get_user_by_mobile(mobile):
+    if users_collection is None: return None
+    return users_collection.find_one({"mobile": mobile})
 
 # --- BETTING FUNCTIONS ---
 def save_bet(user_id, game_name, market, selection, amount):

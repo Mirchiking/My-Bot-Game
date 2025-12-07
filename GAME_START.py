@@ -4,72 +4,65 @@ import logging
 import json
 import requests
 import os
+import time
+import random  # <--- YE MISSING THA, AB ADD KAR DIYA HAI
 from flask import Flask, render_template, request, jsonify
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler, 
     MessageHandler, ContextTypes, filters
 )
 
-# --- INTERNAL MODULES ---
+# --- MODULES ---
 import SETTINGS_AUR_PRICES as settings
 import DATABASE_MEMORY as db
 import MANAGER_HANDLE as manager
 import ALL_GAMES as games
 import ADMIN_POWER as admin
 import BANK_AUR_SHOP as bank
+import DIALOGUES_AUR_RULES as dialogues
 
-# --- LOGGING ---
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# ==============================================================================
-#  🌐 FLASK WEB SERVER
-# ==============================================================================
+# --- FLASK APP ---
 app = Flask(__name__)
-
-def send_telegram_alert(chat_id, message):
-    url = f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
-    try: requests.post(url, json=payload)
-    except Exception as e: print(f"⚠️ Alert Failed: {e}")
+logging.basicConfig(level=logging.INFO)
 
 @app.route('/')
-def home(): return "🤖 MYSTERY HUNT SERVER IS RUNNING"
+def home(): return "🤖 MYSTERY HUNT IS ACTIVE"
 
-# Standard Games
-@app.route('/game/snake')
-def snake(): return render_template('snake.html') 
-@app.route('/game/slots')
-def slots(): return render_template('slots.html')
-@app.route('/game/dice')
-def dice(): return render_template('dice.html')
-@app.route('/game/quiz')
-def quiz(): return render_template('quiz.html')
-# Premium
-@app.route('/premium/bowl')
-def bowl(): return render_template('bowl.html')
-@app.route('/premium/horse')
-def horse(): return render_template('horse.html')
+# --- GAME ROUTES (Frontend serve karna) ---
+@app.route('/game/<name>')
+def serve_game(name):
+    valid_games = ['snake', 'slots', 'dice', 'quiz']
+    if name in valid_games: return render_template(f'{name}.html')
+    return "Game Not Found", 404
 
+@app.route('/premium/<name>')
+def serve_premium(name):
+    valid_games = ['bowl', 'horse']
+    if name in valid_games: return render_template(f'{name}.html')
+    return "Premium Game Not Found", 404
+
+# --- API ENDPOINTS (Strict Logic) ---
 @app.route('/api/deduct_fee', methods=['POST'])
 def api_deduct():
     try:
         data = request.json
         user_id = int(data.get('user_id'))
-        amount = int(data.get('amount'))
-        game_name = data.get('game_name')
+        amount = int(data.get('amount', 0))
+        game = data.get('game_name')
 
         user = db.get_user(user_id, "")
-        if not user: return jsonify({"status": "fail", "message": "User not found"})
+        if not user: return jsonify({"status": "fail", "msg": "User unknown"})
 
+        # Check Shield Logic (Only for losses, but here we deduct entry fee)
+        # Entry Fee is mandatory.
         if user['xp'] >= amount:
-            db.update_user(user_id, None, inc_dict={"xp": -amount}, transaction=f"Played {game_name}")
+            db.update_user(user_id, None, inc_dict={"xp": -amount, "stats.games_played": 1}, transaction=f"Played {game}")
             return jsonify({"status": "success", "new_balance": user['xp'] - amount})
         else:
-            return jsonify({"status": "fail", "message": "Insufficient Balance"})
+            return jsonify({"status": "fail", "msg": "Insufficient Funds"})
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)})
+        return jsonify({"status": "error", "msg": str(e)})
 
 @app.route('/api/claim_win', methods=['POST'])
 def api_claim():
@@ -80,50 +73,64 @@ def api_claim():
         game_name = data.get('game_name')
 
         user = db.get_user(user_id, "")
-        loan = user.get('loan_amount', 0)
         
+        # Double Tap Logic
+        inv = user.get('inventory', {})
+        if inv.get('double', 0) > 0:
+            amount = amount * 2
+            # Decrease inventory
+            inv['double'] -= 1
+            db.update_user(user_id, {"inventory": inv}, transaction="Used Double Tap")
+
+        # Loan Auto-Deduct
+        loan = user.get('loan_amount', 0)
         final_payout = amount
-        deducted_loan = 0
+        deducted = 0
         
         if loan > 0:
             if amount >= loan:
-                deducted_loan = loan
+                deducted = loan
                 final_payout = amount - loan
-                db.update_user(user_id, {"loan_amount": 0}, inc_dict={"xp": -loan}, transaction="Loan Auto-Paid")
+                db.update_user(user_id, {"loan_amount": 0}, inc_dict={"xp": -loan}, transaction="Loan Paid Auto")
             else:
-                deducted_loan = amount
+                deducted = amount
                 final_payout = 0
-                db.update_user(user_id, None, inc_dict={"loan_amount": -deducted_loan, "xp": -deducted_loan})
+                db.update_user(user_id, None, inc_dict={"loan_amount": -deducted, "xp": -deducted})
 
         db.update_user(user_id, None, inc_dict={"xp": amount, "stats.wins": 1}, transaction=f"Won {game_name}")
         
-        msg_user = f"🎉 **YOU WON IN {game_name}!**\n💰 Won: {amount} XP"
-        if deducted_loan > 0: msg_user += f"\n📉 Loan Paid: -{deducted_loan}"
-        msg_user += f"\n💵 **Net Added:** {final_payout} XP"
+        # FIX: Ab 'random' defined hai upar import mein
+        msg = f"{random.choice(dialogues.TEXTS['win_hype'])}\n💰 **Won:** {amount} XP"
+        if deducted > 0: msg += f"\n📉 **Loan Cut:** {deducted} XP"
         
-        send_telegram_alert(user_id, msg_user)
+        # Async Alert
+        send_alert(user_id, msg)
         return jsonify({"status": "success"})
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)})
+        return jsonify({"status": "error", "msg": str(e)})
+
+def send_alert(chat_id, text):
+    try:
+        requests.post(f"https://api.telegram.org/bot{settings.BOT_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"})
+    except: pass
 
 def run_flask():
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-# ==============================================================================
-#  🤖 TELEGRAM BOT LOGIC
-# ==============================================================================
-
+# --- TELEGRAM HANDLERS ---
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
     
-    if data == 'main_menu': await manager.start_command(update, context)
+    # Routing
+    if data == 'main_menu': await manager.show_main_menu(update, context, db.get_user(query.from_user.id, ""))
     elif data == 'show_profile': await manager.show_profile(update, context)
     
     elif data == 'menu_games': await games.game_menu(update, context)
     elif data == 'menu_bowl': await games.menu_bowl(update, context)
     elif data == 'menu_horse': await games.menu_horse(update, context)
+    elif data.startswith('rules|'): await games.show_rules(update, context)
     
     elif data == 'menu_shop': await bank.open_shop_menu(update, context)
     elif data.startswith('shop_buy|') or data == 'show_upi': await bank.handle_shop_buy(update, context)
@@ -132,56 +139,47 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith('bank_act|'): await bank.handle_bank_action(update, context)
     
     elif data == 'admin_dashboard': await admin.open_admin_panel(update, context)
-    elif data.startswith('admin_act|') or data.startswith('admin_ask|'): await admin.handle_admin_buttons(update, context)
-    elif data.startswith('admin_res|'): await admin.handle_market_selection(update, context)
+    elif data == 'admin_player_view': await manager.show_main_menu(update, context, db.get_user(query.from_user.id, ""))
+    elif data.startswith('admin_'): await admin.handle_admin_buttons(update, context)
     
     elif data.startswith('reg_gender|'): await manager.handle_gender_selection(update, context)
-    else: await query.answer("⚠️ Unknown Action")
+    else: await query.answer("⚠️ Unknown Button")
 
-async def handle_unknown_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # WebApp Data
+async def handle_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # WebApp Data (Horse Game Bets)
     if update.effective_message.web_app_data:
         data = update.effective_message.web_app_data.data
         if data.startswith("bet_horse"):
             await games.process_horse_bet(update, context, data)
         return
 
-    # Admin Text Inputs (Add XP, Cut XP, Check User)
-    if await admin.process_admin_text_input(update, context):
-        return
-        
-    # Registration Flow
-    if await manager.handle_registration_input(update, context):
-        return
+    # Admin Inputs
+    if await admin.process_admin_text_input(update, context): return
+    
+    # Registration Inputs
+    if await manager.handle_registration_input(update, context): return
 
-    # Private Chat Default
-    if update.effective_chat.type == 'private':
-        await update.message.reply_text("🤖 I use buttons only. Press /start")
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    txt = "🆘 **HELP MENU**\n\n/start - Open Menu\n/help - Show this\n\n**Admin Commands:**\n/addxp ID AMT\n/cutxp ID AMT\n/result MARKET NUM"
-    await update.message.reply_text(txt, parse_mode='Markdown')
-
-async def admin_shortcuts(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Shortcuts like /addxp 123 500"""
-    cmd = update.message.text.split()[0]
-    if cmd == '/result': await admin.resolve_market_command(update, context)
-    # Add other shortcuts here if needed, but UI is preferred
+async def group_join_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    for member in update.message.new_chat_members:
+        if member.id == context.bot.id: continue
+        kb = [[InlineKeyboardButton("🚀 Go to DM (Start Game)", url=f"https://t.me/{context.bot.username}?start=1")]]
+        await update.message.reply_text(
+            dialogues.TEXTS['group_welcome'].format(name=member.first_name),
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode='Markdown'
+        )
 
 if __name__ == '__main__':
     t = threading.Thread(target=run_flask)
     t.daemon = True
     t.start()
-    print("🌐 WEB SERVER STARTED")
-
+    
     app_bot = ApplicationBuilder().token(settings.BOT_TOKEN).build()
     
     app_bot.add_handler(CommandHandler('start', manager.start_command))
-    app_bot.add_handler(CommandHandler('help', help_command))
-    app_bot.add_handler(CommandHandler('result', admin.resolve_market_command))
-    
     app_bot.add_handler(CallbackQueryHandler(handle_callback))
-    app_bot.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_unknown_text))
+    app_bot.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, group_join_alert))
+    app_bot.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_msg))
     
     print("🚀 BOT IS LIVE")
     app_bot.run_polling()

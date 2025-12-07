@@ -1,78 +1,96 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Neon Quiz</title>
+    <title>Quiz</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { background: #000033; color: #00ffff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; padding: 20px; box-sizing: border-box; }
-        .question-box { background: #000; border: 2px solid #00ffff; padding: 20px; border-radius: 15px; width: 100%; text-align: center; font-size: 20px; margin-bottom: 30px; box-shadow: 0 0 20px #00ffff; }
-        .options { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; width: 100%; }
-        .opt-btn { background: #001133; border: 1px solid #00ffff; color: #fff; padding: 15px; border-radius: 10px; font-size: 16px; cursor: pointer; transition: 0.3s; }
-        .opt-btn:active { background: #00ffff; color: #000; }
-        #score { position: absolute; top: 10px; right: 10px; color: yellow; font-size: 18px; }
+        body { background: #001; color: cyan; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        .box { border: 1px solid cyan; padding: 20px; margin: 10px; width: 90%; text-align: center; border-radius: 10px; }
+        .opt { background: #003; border: 1px solid cyan; padding: 10px; margin: 5px; width: 100%; cursor: pointer; display: none; }
+        .start { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 10; display: flex; justify-content: center; align-items: center; }
     </style>
 </head>
 <body>
-    <div id="score">Score: 0</div>
-    <div class="question-box" id="q-text">Loading...</div>
-    <div class="options" id="opt-container"></div>
+    <div id="start" class="start"><button onclick="startQuiz()" style="padding:20px; font-size:20px;">START QUIZ (20 XP)</button></div>
+    
+    <div id="qBox" class="box">Loading...</div>
+    <div id="opts"></div>
 
     <script>
         const tg = window.Telegram.WebApp;
         tg.expand();
         const userId = tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : 0;
         
-        const db = [
-            {"q": "India ka National Bird?", "opts": ["Peacock", "Eagle", "Crow", "Parrot"], "ans": "Peacock"},
-            {"q": "Cricket team players?", "opts": ["11", "10", "12", "9"], "ans": "11"},
-            {"q": "Samosa ka shape?", "opts": ["Triangle", "Circle", "Square", "Round"], "ans": "Triangle"},
-            {"q": "Computer ka brain?", "opts": ["CPU", "Monitor", "Mouse", "Keyboard"], "ans": "CPU"},
-            {"q": "Duniya ka sabse bada animal?", "opts": ["Blue Whale", "Elephant", "Shark"], "ans": "Blue Whale"}
+        const questions = [
+            {q: "Hawa Mahal kahan hai?", o: ["Delhi", "Jaipur", "Agra", "Mumbai"], a: "Jaipur"},
+            {q: "IPL 2008 kisne jeeta?", o: ["CSK", "MI", "RR", "KKR"], a: "RR"},
+            {q: "Human body mein kitni bones hoti hain?", o: ["206", "208", "300", "105"], a: "206"},
+            {q: "Samsung kis desh ki company hai?", o: ["China", "USA", "Japan", "South Korea"], a: "South Korea"},
+            {q: "Sholay movie mein Gabbar kaun tha?", o: ["Amjad Khan", "Amrish Puri", "Pran", "Prem Chopra"], a: "Amjad Khan"}
         ];
-
-        let currentQ = 0;
+        
+        let curr = 0;
         let score = 0;
 
-        function loadQ() {
-            if(currentQ >= db.length) {
-                // GAME OVER - SEND SCORE
+        function startQuiz() {
+            fetch('/api/deduct_fee', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ user_id: userId, amount: 20, game_name: 'Quiz' })
+            }).then(r=>r.json()).then(d=>{
+                if(d.status=='success') {
+                    document.getElementById('start').style.display = 'none';
+                    nextQ();
+                } else tg.showAlert(d.msg);
+            });
+        }
+
+        function nextQ() {
+            if(curr >= questions.length) {
                 if(score > 0) {
-                     fetch('/api/claim_win', {
+                    fetch('/api/claim_win', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({ user_id: userId, amount: score, game_name: 'Quiz' })
                     });
                 }
-                tg.showAlert("Quiz Over! Won: " + score + " XP");
+                tg.showAlert(`Quiz Over! Won: ${score} XP`);
                 tg.close();
                 return;
             }
-            const data = db[currentQ];
-            document.getElementById('q-text').innerText = data.q;
-            const con = document.getElementById('opt-container');
-            con.innerHTML = '';
+
+            let q = questions[curr];
+            document.getElementById('qBox').innerText = `Q${curr+1}: ${q.q}`;
+            document.getElementById('opts').innerHTML = "";
             
-            data.opts.forEach(opt => {
-                let btn = document.createElement('button');
-                btn.className = 'opt-btn';
-                btn.innerText = opt;
-                btn.onclick = () => check(opt, data.ans);
-                con.appendChild(btn);
-            });
+            // 2 Second Wait for Options
+            setTimeout(() => {
+                q.o.forEach(opt => {
+                    let b = document.createElement('div');
+                    b.className = 'opt';
+                    b.innerText = opt;
+                    b.onclick = () => check(opt, q.a);
+                    document.getElementById('opts').appendChild(b);
+                    b.style.display = 'block';
+                });
+            }, 2000);
         }
 
-        function check(userAns, realAns) {
-            if(userAns === realAns) {
-                score += 20; // 20 XP per right answer
-                document.getElementById('score').innerText = "Score: " + score;
-                tg.showAlert("Correct! ✅");
-            } else {
-                tg.showAlert("Wrong! ❌ Ans: " + realAns);
-            }
-            currentQ++;
-            loadQ();
+        function check(ans, real) {
+            document.getElementById('opts').innerHTML = "<h2 style='color:yellow'>Checking...</h2>";
+            
+            // 5 Second Hype for Result
+            setTimeout(() => {
+                if(ans === real) {
+                    score += 20;
+                    tg.showAlert("✅ Sahi Jawab!");
+                } else {
+                    tg.showAlert("❌ Galat! Sahi tha: " + real);
+                }
+                curr++;
+                nextQ();
+            }, 5000);
         }
-        loadQ();
     </script>
 </body>
 </html>

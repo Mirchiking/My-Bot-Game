@@ -1,69 +1,107 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Neon Slots</title>
+    <title>Slots</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body { background: #000; color: #f0f; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: monospace; }
         .slot-machine { display: flex; gap: 10px; margin-bottom: 30px; padding: 20px; border: 4px solid #f0f; border-radius: 15px; box-shadow: 0 0 30px #f0f; background: #111; }
         .reel { width: 80px; height: 100px; border: 2px solid #fff; display: flex; align-items: center; justify-content: center; font-size: 50px; background: #000; overflow: hidden; }
         button { background: #f0f; color: white; border: none; padding: 15px 40px; font-size: 24px; border-radius: 10px; cursor: pointer; box-shadow: 0 0 20px #f0f; }
-        h1 { text-shadow: 0 0 10px #f0f; color: #f0f; }
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; }
     </style>
 </head>
 <body>
+    <div id="feeOverlay" class="overlay">
+        <h1>🎰 SLOTS</h1>
+        <p style="color:white; font-size:20px;">Fee: 50 XP | Win: 100 XP</p>
+        <button onclick="payFee()">SPIN (50 XP)</button>
+    </div>
+
     <h1>🎰 NEON SLOTS 🎰</h1>
     <div class="slot-machine">
-        <div class="reel" id="r1">🍒</div>
-        <div class="reel" id="r2">🍋</div>
-        <div class="reel" id="r3">🍇</div>
+        <div class="reel" id="r1">❓</div>
+        <div class="reel" id="r2">❓</div>
+        <div class="reel" id="r3">❓</div>
     </div>
-    <button onclick="spin()" id="spinBtn">SPIN</button>
 
     <script>
         const tg = window.Telegram.WebApp;
         tg.expand();
         const userId = tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : 0;
         const items = ["🍒", "🍋", "🍇", "💎", "7️⃣"];
-        
-        function spin() {
-            let btn = document.getElementById('spinBtn');
-            btn.disabled = true;
+
+        function payFee() {
+            tg.MainButton.showProgress();
+            fetch('/api/deduct_fee', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ user_id: userId, amount: 50, game_name: 'Slots' })
+            })
+            .then(res => res.json())
+            .then(data => {
+                tg.MainButton.hideProgress();
+                if(data.status === 'success') {
+                    document.getElementById('feeOverlay').style.display = 'none';
+                    startSpin();
+                } else {
+                    tg.showAlert("❌ " + data.msg);
+                }
+            });
+        }
+
+        function startSpin() {
             let r1 = document.getElementById('r1');
             let r2 = document.getElementById('r2');
             let r3 = document.getElementById('r3');
             
+            // Determine Result Logic (80% Loss, 20% Win)
+            let isWin = Math.random() < 0.2; 
+            let final = [];
+            
+            if(isWin) {
+                let s = items[Math.floor(Math.random() * items.length)];
+                final = [s, s, s];
+            } else {
+                final = [
+                    items[Math.floor(Math.random() * items.length)],
+                    items[Math.floor(Math.random() * items.length)],
+                    items[Math.floor(Math.random() * items.length)]
+                ];
+                // Ensure no accidental win
+                if(final[0] == final[1] && final[1] == final[2]) final[2] = (final[2] == "🍒") ? "🍋" : "🍒";
+            }
+
+            // 10 Seconds Animation
+            let startTime = Date.now();
             let interval = setInterval(() => {
                 r1.innerText = items[Math.floor(Math.random() * items.length)];
                 r2.innerText = items[Math.floor(Math.random() * items.length)];
                 r3.innerText = items[Math.floor(Math.random() * items.length)];
-            }, 100);
-
-            setTimeout(() => {
-                clearInterval(interval);
-                let a = items[Math.floor(Math.random() * items.length)];
-                let b = items[Math.floor(Math.random() * items.length)];
-                let c = items[Math.floor(Math.random() * items.length)];
                 
-                // Demo Luck: 30% chance to force win for fun (Adjust as needed)
-                if(Math.random() > 0.7) { a=b=c="7️⃣"; } 
-                
-                r1.innerText = a; r2.innerText = b; r3.innerText = c;
-                
-                if(a == b && b == c) {
-                    let win = 50;
-                    if(a == "7️⃣") win = 100;
-                    fetch('/api/claim_win', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ user_id: userId, amount: win, game_name: 'Slots' })
-                    });
-                    tg.showAlert(`JACKPOT! 🎉 +${win} XP`);
-                } else {
-                    tg.showAlert("Try Again! ❌");
+                if(Date.now() - startTime > 10000) { // 10 Sec Stop
+                    clearInterval(interval);
+                    r1.innerText = final[0];
+                    r2.innerText = final[1];
+                    r3.innerText = final[2];
+                    
+                    setTimeout(() => {
+                        if(isWin) {
+                            let winAmt = 100;
+                            if(final[0] == "7️⃣") winAmt = 250;
+                            fetch('/api/claim_win', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ user_id: userId, amount: winAmt, game_name: 'Slots' })
+                            });
+                            tg.showAlert(`🎉 JACKPOT! +${winAmt} XP`);
+                        } else {
+                            tg.showAlert("💔 Haar gaye! Better luck next time.");
+                        }
+                        tg.close();
+                    }, 500);
                 }
-                btn.disabled = false;
-            }, 2000);
+            }, 100);
         }
     </script>
 </body>

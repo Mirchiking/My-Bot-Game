@@ -1,98 +1,123 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Lucky Bowl Premium</title>
+    <title>Lucky Bowl</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { background: #1a0033; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; font-family: 'Arial', sans-serif; overflow: hidden; }
-        canvas { border-radius: 50%; border: 10px solid #d4af37; box-shadow: 0 0 50px #d4af37; background: #000; margin-bottom: 20px; }
-        .controls { display: flex; gap: 10px; z-index: 10; }
-        input { padding: 10px; font-size: 18px; width: 100px; text-align: center; border-radius: 5px; border: none; }
-        button { background: #d4af37; color: #000; border: none; padding: 10px 20px; font-size: 18px; font-weight: bold; border-radius: 5px; cursor: pointer; }
-        h2 { color: #d4af37; text-shadow: 0 0 10px #d4af37; position: absolute; top: 20px; }
+        body { background: #1a0033; color: white; display: flex; flex-direction: column; align-items: center; overflow: hidden; height: 100vh; margin:0; }
+        canvas { border-radius: 50%; border: 10px solid gold; margin-top: 20px; background: #000; }
+        .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin-top: 10px; max-height: 150px; overflow-y: auto; }
+        .num { border: 1px solid gold; padding: 5px; text-align: center; cursor: pointer; }
+        .selected { background: gold; color: black; font-weight: bold; }
+        button { background: gold; color: black; border: none; padding: 15px 30px; font-size: 18px; font-weight: bold; margin-top: 10px; cursor: pointer; }
     </style>
 </head>
 <body>
-    <h2>🎱 LUCKY BOWL JACKPOT</h2>
-    <canvas id="bowl" width="300" height="300"></canvas>
+    <h2 id="msg">🎱 SELECT 1-5 NUMBERS</h2>
+    <canvas id="bowl" width="250" height="250"></canvas>
     
-    <div class="controls" id="ui">
-        <input type="number" id="userNum" placeholder="1-99" min="1" max="99">
-        <button onclick="playBowl()">PLAY (100 XP)</button>
-    </div>
+    <div class="grid" id="grid"></div>
+    <button onclick="play()" id="playBtn">PLAY (100 XP)</button>
 
     <script>
         const tg = window.Telegram.WebApp;
         tg.expand();
         const userId = tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : 0;
         
-        const canvas = document.getElementById('bowl');
-        const ctx = canvas.getContext('2d');
-        let balls = [];
+        let picks = [];
+        const grid = document.getElementById('grid');
         
-        // Setup Bouncing Balls
-        for(let i=0; i<15; i++) {
-            balls.push({
-                x: 150, y: 150,
-                vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10,
-                color: `hsl(${Math.random()*360}, 100%, 50%)`,
-                r: 10
+        // Generate 1-99
+        for(let i=1; i<=99; i++) {
+            let d = document.createElement('div');
+            d.className = 'num'; d.innerText = i;
+            d.onclick = () => toggle(i, d);
+            grid.appendChild(d);
+        }
+
+        function toggle(n, el) {
+            if(picks.includes(n)) {
+                picks = picks.filter(x => x !== n);
+                el.classList.remove('selected');
+            } else {
+                if(picks.length >= 5) { tg.showAlert("Max 5 Numbers!"); return; }
+                picks.push(n);
+                el.classList.add('selected');
+            }
+        }
+
+        function play() {
+            if(picks.length === 0) { tg.showAlert("Select at least 1 number!"); return; }
+            
+            tg.showConfirm(`Cost: 100 XP. Play?`, ok => {
+                if(ok) {
+                    fetch('/api/deduct_fee', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ user_id: userId, amount: 100, game_name: 'Bowl' })
+                    }).then(r=>r.json()).then(d => {
+                        if(d.status === 'success') {
+                            startBowl();
+                        } else tg.showAlert(d.msg);
+                    });
+                }
             });
         }
 
+        // Canvas Animation
+        const ctx = document.getElementById('bowl').getContext('2d');
+        let balls = [];
+        for(let i=0; i<10; i++) balls.push({x:125, y:125, vx: Math.random()*10-5, vy: Math.random()*10-5, color:`hsl(${Math.random()*360},100%,50%)`});
+
         function animate() {
-            ctx.fillStyle = "rgba(0,0,0,0.2)";
-            ctx.fillRect(0,0,300,300);
-            
+            ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fillRect(0,0,250,250);
             balls.forEach(b => {
-                b.x += b.vx; b.y += b.vy;
-                
-                // Bounce inside Circle (Simple box physics for visual)
-                if(b.x < 0 || b.x > 300) b.vx *= -1;
-                if(b.y < 0 || b.y > 300) b.vy *= -1;
-                
-                ctx.beginPath();
-                ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
-                ctx.fillStyle = b.color;
-                ctx.fill();
+                b.x+=b.vx; b.y+=b.vy;
+                if(b.x<0||b.x>250) b.vx*=-1; if(b.y<0||b.y>250) b.vy*=-1;
+                ctx.beginPath(); ctx.arc(b.x, b.y, 8, 0, Math.PI*2); ctx.fillStyle=b.color; ctx.fill();
             });
             requestAnimationFrame(animate);
         }
         animate();
 
-        function playBowl() {
-            let val = document.getElementById('userNum').value;
-            if(!val || val < 1 || val > 99) {
-                tg.showAlert("Choose Number 1-99");
-                return;
-            }
+        function startBowl() {
+            document.getElementById('playBtn').style.display = 'none';
+            document.getElementById('msg').innerText = "ROLLING... (Wait 10s)";
             
-            // Send Bet Request via Web App Data (Secure) or Fetch
-            // Simulation for Hybrid App:
-            tg.showConfirm("Spend 100 XP to Play?", (ok) => {
-                if(ok) {
-                    // Visual Effect
-                    let winningNum = Math.floor(Math.random() * 99) + 1;
-                    
-                    tg.showAlert("Rolling... 🎱");
-                    
-                    setTimeout(() => {
-                        if(parseInt(val) === winningNum) {
-                            fetch('/api/claim_win', {
-                                method: 'POST',
-                                headers: {'Content-Type': 'application/json'},
-                                body: JSON.stringify({ user_id: userId, amount: 9000, game_name: 'Lucky Bowl' })
-                            });
-                            tg.showAlert(`JACKPOT!! Winning Number: ${winningNum}. You Won 9000 XP!`);
-                        } else {
-                            // Deduct XP logic should ideally be server side before spin, 
-                            // but here we rely on 'Entry Fee' deduction or simple loss.
-                            // Since this is V1, we just show loss.
-                            tg.showAlert(`You Lost! Winning Number was: ${winningNum}`);
-                        }
-                    }, 2000);
+            // 10 Second Hype
+            setTimeout(() => {
+                // Determine Winner
+                // 95% Loss, 5% Win (Jackpot is hard)
+                let winNum = 0;
+                let won = false;
+                
+                if(Math.random() < 0.05) {
+                    winNum = picks[Math.floor(Math.random()*picks.length)];
+                    won = true;
+                } else {
+                    // Near miss logic
+                    let target = picks[0];
+                    winNum = target + (Math.random() < 0.5 ? 1 : -1); 
+                    if(winNum < 1) winNum = 2;
                 }
-            });
+                
+                document.getElementById('msg').innerText = `WINNING NUMBER: ${winNum}`;
+                
+                setTimeout(() => {
+                    if(won) {
+                        fetch('/api/claim_win', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ user_id: userId, amount: 9000, game_name: 'Bowl' })
+                        });
+                        tg.showAlert("🎱 JACKPOT!!! 9000 XP WON!");
+                    } else {
+                        tg.showAlert(`💔 Miss ho gaya! Winning Ball: ${winNum}`);
+                    }
+                    tg.close();
+                }, 2000);
+
+            }, 10000);
         }
     </script>
 </body>

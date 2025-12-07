@@ -1,142 +1,87 @@
 import random
 
-# ==============================================================================
-#  ADVANCED DIALOGUES & RULES ENGINE
-#  Tone: Funny, Emotional, Respectful, Hinglish
-# ==============================================================================
+# --- HINGLISH DIALOGUES & RULES ---
 
-# --- 1. RANDOM GREETINGS (Har baar naya welcome) ---
-GREETINGS_LIST = [
-    "Namaste",
-    "Radhe Radhe",
-    "Oye Champion",
-    "Aur Mere Bhai",
-    "Welcome Back",
-    "Aagaye Aap",
-    "Jai Hind"
+GREETINGS = [
+    "Aur Boss! Kya haal hain? 😎",
+    "Swagat hai Gaming Ke Baap ke pass! 👑",
+    "Aaja Bhai, aaj tera din hai! 🚀",
+    "Paisa hi Paisa hoga aaj toh! 💰",
+    "Oye Champion! Ready hai na? 🥊"
 ]
 
-# --- 2. RANK / CATEGORIES SYSTEM (As per your request) ---
-# Format: 'key': 'Display Name'
-RANK_TITLES = {
-    'noob': "👶 Noob (Level 0)",
-    'pro': "😎 Pro (Level 10+)",
-    'legend': "👑 Legend (Level 50+)",
-    'god': "⚡ God Mode (Level 100+)"
+TITLES = {
+    'noob': "👶 Noobda (Level 0)",
+    'pro': "😎 Khiladi (Level 10+)",
+    'legend': "🦁 Sher (Level 50+)",
+    'god': "⚡ Bhagwan (Level 100+)"
 }
-
-# --- 3. ICONS & EMOJIS ---
-ICONS = {
-    'xp': "💎",
-    'bank': "🏦",
-    'shop': "🛒",
-    'warn': "⚠️",
-    'game': "🎮",
-    'loan': "💸",
-    'time': "⏳"
-}
-
-# --- 4. MAIN MESSAGES DICTIONARY ---
 
 TEXTS = {
-    # --- WELCOME MESSAGE (Personal DM) ---
+    # Onboarding
     'welcome_dm': """
 {greeting} **{name}**! 👋
 
 🆔 **User ID:** `{user_id}`
 🏅 **Rank:** {rank}
-💎 **XP Wallet:** {xp} XP
+💎 **Jeb Mein:** {xp} XP
+🏦 **Bank Mein:** {bank} XP
 
-Main hoon aapka Gaming Buddy! 🤖
-Game khelo Group mein, par hisaab-kitaab hoga yahan DM mein.
+Main hoon **Mystery Bot**. Yahan sirf XP chalta hai!
+Jeetoge toh Raja 👑, Haaroge toh... Try Again! 😅
 
-Kiya karna chahenge aaj? Niche buttons dabao! 👇
+Batao kya karna hai? 👇
 """,
 
-    # --- TIME RESTRICTION (10 AM - 9 PM) ---
-    'shop_closed': """
-😴 **Sone ka time hai Bhai!**
-
-Humari gaming shop sirf **Subah 10 baje se Raat 9 baje** tak khulti hai.
-Abhi bot aaram kar raha hai. Kal subah aana, tab tak energy bacha ke rakho! 🌙
-
-_Time abhi: {current_time}_
-""",
-
-    # --- GROUP WELCOME (First Time Join) ---
     'group_welcome': """
-👋 **Swagat hai {name} Gaming Arena mein!**
+👋 **Oye {name}! Welcome to the Gang!** Yahan sirf chill mahol hai.
+Game khelna hai aur XP kamana hai toh **DM mein aao**.
+Warna yahan baith ke tamasha dekho! 😂
 
-Aapko milte hain **Joining Bonus: {bonus} XP**! 🎁
-Aap abhi **{rank}** level par ho.
-
-Game khelne ke liye taiyaar ho jao! Result sabko yahan dikhega, par prize aapke DM mein aayega.
+👇 **Niche Button dabao aur DM mein aao:**
 """,
 
-    # --- RULES (Funny & Clear) ---
-    'game_rules': """
-📜 **NIYAM AUR SHARTEIN (Rules)** 📜
+    # Rules
+    'rules_general': """
+📜 **NIYAM AUR KANOON (Rules)** 📜
 
-1. **🚫 No Typing:** Yahan likhna mana hai, sirf Buttons dabane ka!
-2. **💎 XP is Money:** Game jeeto, XP kamao. Yehi aapki currency hai.
-3. **🏦 Bank System:** Apne XP Bank mein save karo warna game haarne par udd jayenge.
-4. **🤝 Loan Suvidha:** Agar kangal ho gaye (0 XP), tabhi Loan milega.
-5. **🤬 Respect:** Gaali-galoch nahi, hum yahan sirf fun ke liye hain.
+1. **XP = Izzat:** Jitna XP, utni izzat. 0 XP matlab khatam tata bye bye.
+2. **Bank Use Karo:** Game khelne se pehle Paisa Bank mein daalo, warna haarne pe sab ud jayega.
+3. **No Cheating:** Agar spam kiya ya bot ko confuse kiya, toh seedha **BAN**.
+4. **Loan:** Sirf tab milega jab wallet aur bank dono 0 honge.
+5. **Respect:** Bot se pyaar se baat karo, warna reply nahi milega.
 
-_Samajh gaye? Toh chalo shuru karte hain!_
+_Samajh gaye? Toh khelo dil khol ke!_
 """,
 
-    # --- BANK MESSAGES ---
-    'bank_menu': """
-🏦 **XP BANK OF GAMERS**
+    'rules_snake': "🐍 **SNAKE RULES:**\n- Ungli se (Swipe) control karo.\n- Deewar (Wall) se mat takrana.\n- Khud ko mat kaatna.\n- Har Apple = 2 XP.",
+    'rules_horse': "🐎 **HORSE RACING:**\n- 0 se 99 koi bhi Number chuno.\n- Jitne chaho utne ghodo par paisa lagao.\n- Result time par aayega.\n- Jeete toh 90x Paisa!",
+    'rules_bowl': "🎱 **LUCKY BOWL:**\n- 1 se 5 Number select karo.\n- Agar ball tumhare number pe ruki... JACKPOT (90x)!\n- Risk hai toh ishq hai!",
 
-Yahan aapke XP safe rahenge.
-💰 **Wallet Balance:** {wallet} XP
-🔐 **Bank Balance:** {bank} XP
-📉 **Loan Active:** {loan_status}
-
-Kya karna hai Seth ji? 👇
-""",
+    # Game Results
+    'win_hype': [
+        "🎉 **ARRE WAAH!** Party kab de raha hai? 🍻",
+        "🚀 **Udd gaya paisa!** Jeet gaye Guru!",
+        "🤑 **Note chaap diye bhai ne!**",
+        "👑 **System Hila Diya!** Big Win!"
+    ],
     
-    'deposit_success': "✅ **Jama Ho Gaye!** {amount} XP ab Bank mein safe hain.",
-    'withdraw_success': "✅ **Nikaal Liye!** {amount} XP aapke Wallet mein aa gaye.",
-    'insufficient_funds': "❌ **Garib ho kya?** Itne XP toh hai hi nahi tumhare paas! 😅",
+    'loss_funny': [
+        "💔 **Dil se bura lagta hai bhai...** Haar gaye.",
+        "📉 **Gareebi aa gayi...** Koi nahi, loan lele!",
+        "🤣 **Bot se jeetna mushkil hi nahi, namumkin hai!**",
+        "🧹 **Safaya ho gaya!** Better luck next time."
+    ],
     
-    # --- SHOP & LIFELINES ---
-    'shop_menu': """
-🛒 **MAGIC SHOP**
-Apne XP se power-ups kharido aur game mein dominance banao!
-
-1. 🛡️ **XP Shield:** Haarne par XP nahi katenge.
-2. 🚀 **Double Dhamaka:** Jeetne par 2x profit.
-3. 🤞 **Luck Booster:** Dice game mein jeetne ke chance badh jayenge.
-
-_Select karo niche se:_
-""",
-
-    # --- GAME RESULTS ---
-    'win_msg': "🎉 **Badhai ho!** Aap jeet gaye **{amount} XP**! Party kab de rahe ho?",
-    'lose_msg': "💔 **Oh No!** Aap haar gaye **{amount} XP**. Koi baat nahi, agli baar pakka jeetoge!",
-    
-    # --- LOAN ---
-    'loan_approved': "✅ **Loan Approved!** {amount} XP de diye hain. Time pe chuka dena warna byaaj (interest) lagega!",
-    'loan_rejected': "❌ **Loan Rejected!** Pehle purana hisaab clear karo ya wallet 0 hone ka wait karo."
+    # Bank & Shop
+    'insufficient': "❌ **Bhai Jeb Khali Hai!**\nPehle XP kamao ya Bank se nikalo. Udhaar nahi chalta yahan.",
+    'loan_taken': "💸 **Le Bhai Karza!**\nAb ye XP wapis bhi karna hai, bhool mat jana.",
+    'shop_success': "✅ **Item Kharid Liya!**\nAb game mein use karna mat bhoolna."
 }
 
-# --- 5. HELPER FUNCTIONS (Logic ko asaan banane ke liye) ---
-
-def get_random_greeting():
-    """Returns a random greeting string"""
-    return random.choice(GREETINGS_LIST)
-
+def get_random_greeting(): return random.choice(GREETINGS)
 def get_rank_name(xp):
-    """Returns rank name based on XP/Level logic"""
-    # Logic: XP ke hisaab se rank decide karega
-    if xp < 1000:
-        return RANK_TITLES['noob']
-    elif xp < 5000:
-        return RANK_TITLES['pro']
-    elif xp < 20000:
-        return RANK_TITLES['legend']
-    else:
-        return RANK_TITLES['god']
+    if xp < 1000: return TITLES['noob']
+    elif xp < 5000: return TITLES['pro']
+    elif xp < 20000: return TITLES['legend']
+    return TITLES['god']
