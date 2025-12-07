@@ -9,17 +9,19 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 DB_NAME = "MysteryHuntProDB"
 
-# Web App URL (Must be HTTPS for Telegram WebApps)
+# UPI ID for Payment (Monospace ke liye code mein use hoga)
+ADMIN_UPI = os.getenv("ADMIN_UPI", "sha.839@ptaxis")
+
+# Web App URL (Must be HTTPS - Render/Heroku URL)
+# Example: https://mystery-bot.onrender.com
 WEB_APP_URL = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:5000")
 
 # --- 2. ADMIN CONFIG ---
-# Main Owner ID from Environment
 try:
     OWNER_ID = int(os.getenv("ADMIN_USER_ID", "0"))
 except ValueError:
     OWNER_ID = 0
 
-# List of all Admins
 ADMIN_IDS = [OWNER_ID] 
 
 # --- 3. ECONOMY & PRICES ---
@@ -27,23 +29,23 @@ REAL_MONEY_RATE = 10.0  # ₹10 = 100 XP
 
 PRICES = {
     'hint': 50,
-    'fifty': 50,
-    'skip': 50,
     'shield': 50,
+    'fifty': 50,      # New
+    'skip': 50,       # New
+    'double': 75,     # New (Double Tap)
     'bowl_ball': 100,
     'horse_min_bet': 50
 }
 
 # --- 4. PAYOUTS ---
 PAYOUTS = {
-    'bowl_jackpot': 90,    # 90x
-    'horse_win': 90        # 90x
+    'bowl_jackpot': 90,
+    'horse_win': 90
 }
 
-# --- 5. HORSE GAME MARKETS (IST) ---
+# --- 5. TIME & MARKETS (IST) ---
 TIMEZONE = pytz.timezone('Asia/Kolkata')
 
-# Structure: Open(H,M), Close(H,M)
 MARKETS = {
     'DISAWAR':   {'open_h': 9,  'open_m': 0,  'close_h': 0,  'close_m': 0},  
     'FARIDABAD': {'open_h': 19, 'open_m': 0,  'close_h': 16, 'close_m': 0}, 

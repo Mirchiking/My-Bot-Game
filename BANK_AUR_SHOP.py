@@ -3,21 +3,36 @@ from telegram.ext import ContextTypes
 import DATABASE_MEMORY as db
 import SETTINGS_AUR_PRICES as settings
 
+# --- SHOP ---
 async def open_shop_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user = db.get_user(query.from_user.id, "")
+    inv = user.get('inventory', {})
     
-    txt = f"🛍️ **SHOP** | XP: {user['xp']}\n\n👇 **Powerups (50 XP each):**"
+    txt = f"🛍️ **SHOP** | XP: {user['xp']}\n\n"
+    txt += f"🛡️ Shield: {inv.get('shield',0)} | 💡 Hint: {inv.get('hint',0)}\n"
+    txt += f"✂️ 50-50: {inv.get('fifty',0)} | ⏭ Skip: {inv.get('skip',0)}\n"
+    txt += f"⚡ Double: {inv.get('double',0)}\n"
+
     kb = [
-        [InlineKeyboardButton("💡 Hint", callback_data='shop_buy|hint'),
-         InlineKeyboardButton("🛡️ Shield", callback_data='shop_buy|shield')],
-        [InlineKeyboardButton("💎 BUY XP (Calculator)", callback_data='start_calc_xp')],
+        [InlineKeyboardButton("🛡️ Shield (50)", callback_data='shop_buy|shield'),
+         InlineKeyboardButton("💡 Hint (50)", callback_data='shop_buy|hint')],
+        [InlineKeyboardButton("✂️ 50-50 (50)", callback_data='shop_buy|fifty'),
+         InlineKeyboardButton("⏭ Skip (50)", callback_data='shop_buy|skip')],
+        [InlineKeyboardButton("⚡ Double Tap (75)", callback_data='shop_buy|double')],
+        [InlineKeyboardButton("💎 BUY XP (Show UPI)", callback_data='show_upi')],
         [InlineKeyboardButton("🔙 Menu", callback_data='main_menu')]
     ]
     await query.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb))
 
 async def handle_shop_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    
+    if query.data == 'show_upi':
+        upi_txt = f"💸 **ADD MONEY**\n\nUPI ID:\n`{settings.ADMIN_UPI}`\n\n(Tap to Copy)\nSend screenshot to Admin."
+        await query.edit_message_text(upi_txt, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data='menu_shop')]]), parse_mode='Markdown')
+        return
+
     item = query.data.split('|')[1]
     uid = query.from_user.id
     user = db.get_user(uid, "")
@@ -32,33 +47,20 @@ async def handle_shop_buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.answer("❌ Not enough XP!", show_alert=True)
 
-# --- CALCULATOR ---
-async def start_xp_calculator(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['waiting_for_calc'] = True
-    await update.callback_query.edit_message_text("🧮 **XP CALCULATOR**\n\nEnter Amount in ₹ (e.g. 50):")
-
-async def process_xp_calculation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        amt_inr = int(update.message.text)
-        xp = int(amt_inr * 10) # ₹10 = 100 XP
-        
-        txt = f"🧾 **ESTIMATE**\n\n💸 Pay: ₹{amt_inr}\n💎 Get: {xp} XP\n\nUPI: `your-upi-id@okicici`\nSend screenshot to Admin."
-        await update.message.reply_text(txt, parse_mode='Markdown')
-        context.user_data['waiting_for_calc'] = False
-    except:
-        await update.message.reply_text("❌ Invalid number. Try again.")
-
 # --- BANK ---
 async def open_bank_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     u = db.get_user(query.from_user.id, "")
     limit = int(u.get('total_deposit', 0) * 0.5)
     
-    txt = f"🏦 **BANK**\n👛 Wallet: {u['xp']}\n🔐 Bank: {u['bank']}\n📉 Loan: {u['loan_amount']}/{limit}"
+    txt = f"🏦 **BANK**\n👛 Wallet: {u['xp']}\n🔐 Bank: {u['bank']}\n📉 Loan Limit: {limit}"
+    
     kb = [
-        [InlineKeyboardButton("📥 Deposit All", callback_data='bank_action|dep'),
-         InlineKeyboardButton("📤 Withdraw All", callback_data='bank_action|with')],
-        [InlineKeyboardButton("💸 Take Loan", callback_data='bank_action|loan')],
+        [InlineKeyboardButton("📥 Dep 50%", callback_data='bank_act|dep_50'),
+         InlineKeyboardButton("📥 Dep 100%", callback_data='bank_act|dep_100')],
+        [InlineKeyboardButton("📤 With 50%", callback_data='bank_act|with_50'),
+         InlineKeyboardButton("📤 With 100%", callback_data='bank_act|with_100')],
+        [InlineKeyboardButton("💸 Take Loan", callback_data='bank_act|loan')],
         [InlineKeyboardButton("🔙 Menu", callback_data='main_menu')]
     ]
     await query.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb))
@@ -69,18 +71,28 @@ async def handle_bank_action(update: Update, context: ContextTypes.DEFAULT_TYPE)
     uid = q.from_user.id
     u = db.get_user(uid, "")
     
-    if act == 'dep':
-        if u['xp'] > 0:
-            db.update_user(uid, None, inc_dict={'xp': -u['xp'], 'bank': u['xp']})
-            await q.answer("✅ Deposited")
-    elif act == 'with':
-        if u['bank'] > 0:
-            db.update_user(uid, None, inc_dict={'xp': u['bank'], 'bank': -u['bank']})
-            await q.answer("✅ Withdrawn")
+    if 'dep' in act:
+        percent = 0.5 if '50' in act else 1.0
+        amount = int(u['xp'] * percent)
+        if amount > 0:
+            db.update_user(uid, None, inc_dict={'xp': -amount, 'bank': amount})
+            await q.answer(f"✅ Deposited {amount} XP")
+        else:
+            await q.answer("❌ Empty Wallet")
+            
+    elif 'with' in act:
+        percent = 0.5 if '50' in act else 1.0
+        amount = int(u['bank'] * percent)
+        if amount > 0:
+            db.update_user(uid, None, inc_dict={'xp': amount, 'bank': -amount})
+            await q.answer(f"✅ Withdrawn {amount} XP")
+        else:
+            await q.answer("❌ Empty Bank")
+            
     elif act == 'loan':
         limit = int(u.get('total_deposit', 0) * 0.5)
         if u['loan_amount'] > 0:
-            await q.answer("❌ Clear existing loan first!", show_alert=True)
+            await q.answer("❌ Pay old loan first!", show_alert=True)
         elif u['xp'] > 10 or u['bank'] > 10:
             await q.answer("❌ You have money! No loan.", show_alert=True)
         elif limit < 50:

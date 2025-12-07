@@ -4,22 +4,44 @@
     <title>Luck with Horse</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { background: #051a05; color: #00ff00; font-family: monospace; display: flex; flex-direction: column; align-items: center; padding: 10px; }
-        h1 { margin: 10px 0; text-shadow: 0 0 10px #0f0; }
-        .grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 5px; width: 100%; max-width: 400px; }
-        .cell { background: #003300; border: 1px solid #005500; padding: 10px; text-align: center; cursor: pointer; border-radius: 4px; }
-        .cell.selected { background: #00ff00; color: #000; box-shadow: 0 0 10px #00ff00; }
-        .controls { position: fixed; bottom: 0; width: 100%; background: #002200; padding: 15px; display: flex; gap: 10px; justify-content: center; box-shadow: 0 -5px 20px #000; }
-        input { background: #000; border: 1px solid #0f0; color: #0f0; padding: 10px; width: 80px; text-align: center; font-size: 16px; }
-        button { background: #0f0; color: #000; border: none; padding: 10px 20px; font-weight: bold; cursor: pointer; font-size: 16px; }
+        body { background: #051a05; color: #00ff00; font-family: monospace; display: flex; flex-direction: column; align-items: center; padding: 10px; margin: 0; }
+        h1 { margin: 10px 0; text-shadow: 0 0 10px #0f0; font-size: 24px; }
+        
+        /* Market Dropdown Style */
+        select {
+            background: #003300; color: #0f0; border: 2px solid #0f0;
+            padding: 10px; font-size: 16px; border-radius: 5px;
+            margin-bottom: 15px; width: 90%; font-weight: bold;
+        }
+
+        .grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; width: 100%; max-width: 380px; }
+        .cell { background: #003300; border: 1px solid #005500; padding: 8px 0; text-align: center; cursor: pointer; border-radius: 3px; font-size: 14px; }
+        .cell.selected { background: #00ff00; color: #000; box-shadow: 0 0 10px #00ff00; font-weight: bold; }
+        
+        .controls { position: fixed; bottom: 0; width: 100%; background: #002200; padding: 15px; display: flex; gap: 10px; justify-content: center; box-shadow: 0 -5px 20px #000; z-index: 100; }
+        input { background: #000; border: 1px solid #0f0; color: #0f0; padding: 10px; width: 80px; text-align: center; font-size: 18px; border-radius: 5px; }
+        button { background: #0f0; color: #000; border: none; padding: 10px 20px; font-weight: bold; cursor: pointer; font-size: 18px; border-radius: 5px; }
+        
+        /* Spacer for scrolling */
+        .spacer { height: 100px; width: 100%; }
     </style>
 </head>
 <body>
     <h1>🐎 HORSE BETTING</h1>
-    <div style="font-size:12px; margin-bottom:10px;">Select Number (0-99)</div>
+    
+    <select id="marketSelect">
+        <option value="" disabled selected>-- Select Market --</option>
+        <option value="DISAWAR">Disawar (Close: 12 AM)</option>
+        <option value="FARIDABAD">Faridabad (Close: 6 PM)</option>
+        <option value="GHAZIABAD">Ghaziabad (Close: 8:30 PM)</option>
+        <option value="GALI">Gali (Close: 11 PM)</option>
+        <option value="SG">SG (Close: 3 PM)</option>
+    </select>
+
+    <div style="font-size:12px; margin-bottom:5px;">Select Number (0-99):</div>
     
     <div class="grid" id="grid"></div>
-    <div style="height: 80px;"></div>
+    <div class="spacer"></div>
 
     <div class="controls">
         <input type="number" id="amount" placeholder="XP" min="50" value="50">
@@ -48,14 +70,20 @@
         }
 
         function placeBet() {
-            if(selectedNum === null) { tg.showAlert("Please select a Horse Number!"); return; }
+            let market = document.getElementById('marketSelect').value;
             let amt = document.getElementById('amount').value;
-            if(amt < 50) { tg.showAlert("Minimum Bet is 50 XP!"); return; }
 
-            tg.showConfirm(`Bet ${amt} XP on Number ${selectedNum}?`, (ok) => {
+            // VALIDATIONS
+            if(!market) { tg.showAlert("⚠️ Pehle Market Select Karo!"); return; }
+            if(selectedNum === null) { tg.showAlert("⚠️ Ghoda Number (0-99) Select Karo!"); return; }
+            if(amt < 50) { tg.showAlert("⚠️ Minimum Bet 50 XP hai!"); return; }
+
+            tg.showConfirm(`Bet Confirm karein?\n\nMarket: ${market}\nNumber: ${selectedNum}\nAmount: ${amt} XP`, (ok) => {
                 if(ok) {
-                    const data = `bet_horse|${selectedNum}|${amt}`;
-                    tg.sendData(data); // Sends to Bot to Deduct
+                    // Data Format: bet_horse | MARKET | NUMBER | AMOUNT
+                    // Ye format ab Python code se match karega
+                    const data = `bet_horse|${market}|${selectedNum}|${amt}`;
+                    tg.sendData(data); 
                 }
             });
         }

@@ -2,133 +2,140 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 import SETTINGS_AUR_PRICES as settings
 import DATABASE_MEMORY as db
-import asyncio
 
 def is_admin(user_id):
     return user_id in settings.ADMIN_IDS
 
 async def open_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    if not is_admin(query.from_user.id): return
+    uid = query.from_user.id
+    if not is_admin(uid): return
 
-    txt = "⚙️ **ADMIN DASHBOARD**"
+    total_users = db.get_all_users_count()
+    
+    txt = f"⚙️ **ADMIN DASHBOARD**\n👑 Master: {uid}\n👥 Total Users: {total_users}"
     kb = [
-        [InlineKeyboardButton("💰 Add XP", callback_data='admin_act|add_xp_menu')],
+        [InlineKeyboardButton("👤 My Profile", callback_data='show_profile')],
+        [InlineKeyboardButton("👥 Check User", callback_data='admin_ask|check_user'),
+         InlineKeyboardButton("🔄 Reset User", callback_data='admin_ask|reset_user')],
+        [InlineKeyboardButton("💰 Add XP", callback_data='admin_ask|add_xp'), 
+         InlineKeyboardButton("✂️ Cut XP", callback_data='admin_ask|cut_xp')],
         [InlineKeyboardButton("🐎 DECLARE RESULT", callback_data='admin_act|set_horse')],
+        [InlineKeyboardButton("🎛 Switch to Player", callback_data='main_menu')],
         [InlineKeyboardButton("🔙 Exit", callback_data='main_menu')]
     ]
     await query.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
 
 async def handle_admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    data = query.data.split('|')[1]
+    data = query.data
     
-    if data == 'set_horse':
-        # Show Markets
+    if data.startswith('admin_act|set_horse'):
         kb = []
         for m in settings.MARKETS.keys():
             kb.append([InlineKeyboardButton(f"🏁 {m}", callback_data=f'admin_res|{m}')])
         kb.append([InlineKeyboardButton("🔙 Back", callback_data='admin_dashboard')])
-        await query.edit_message_text("Select Market to Declare Result:", reply_markup=InlineKeyboardMarkup(kb))
+        await query.edit_message_text("🏆 **Select Market to Declare Result:**", reply_markup=InlineKeyboardMarkup(kb))
+        
+    elif data.startswith('admin_ask|'):
+        action = data.split('|')[1]
+        context.user_data['admin_action'] = action
+        await query.edit_message_text(f"⌨️ **ACTION: {action.upper()}**\n\nSend the **User ID** now (Type in chat):")
 
+async def process_admin_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles manual Admin inputs like User IDs for XP/Reset"""
+    if not is_admin(update.effective_user.id): return False
+    
+    action = context.user_data.get('admin_action')
+    if not action: return False
+    
+    try:
+        target_id = int(update.message.text)
+        target_user = db.get_user(target_id, "")
+        
+        if not target_user['is_registered']:
+            await update.message.reply_text("❌ User not found or not registered.")
+            context.user_data['admin_action'] = None
+            return True
+
+        if action == 'check_user':
+            u = target_user
+            msg = f"🕵️ **USER REPORT**\nID: `{u['_id']}`\nName: {u['real_name']}\nXP: {u['xp']}\nBank: {u['bank']}\nInv: {u['inventory']}"
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        elif action == 'reset_user':
+            db.reset_user_data(target_id)
+            await update.message.reply_text(f"♻️ **User {target_id} has been RESET.**")
+            
+        elif action == 'add_xp':
+            context.user_data['target_uid'] = target_id
+            context.user_data['admin_action'] = 'confirm_add_xp'
+            await update.message.reply_text(f"💰 Adding XP to **{target_id}**.\nEnter Amount:")
+            return True
+            
+        elif action == 'cut_xp':
+            context.user_data['target_uid'] = target_id
+            context.user_data['admin_action'] = 'confirm_cut_xp'
+            await update.message.reply_text(f"✂️ Cutting XP from **{target_id}**.\nEnter Amount:")
+            return True
+            
+        elif action == 'confirm_add_xp':
+            amt = int(update.message.text)
+            uid = context.user_data['target_uid']
+            db.update_user(uid, None, inc_dict={"xp": amt, "total_deposit": amt}, transaction="Admin Add")
+            await update.message.reply_text(f"✅ Added {amt} XP to {uid}.")
+            await context.bot.send_message(uid, f"🎁 **Admin Added:** {amt} XP")
+            
+        elif action == 'confirm_cut_xp':
+            amt = int(update.message.text)
+            uid = context.user_data['target_uid']
+            db.update_user(uid, None, inc_dict={"xp": -amt}, transaction="Admin Cut")
+            await update.message.reply_text(f"✂️ Cut {amt} XP from {uid}.")
+            await context.bot.send_message(uid, f"📉 **Admin Deducted:** {amt} XP")
+
+        # Reset State
+        context.user_data['admin_action'] = None
+        return True
+        
+    except ValueError:
+        await update.message.reply_text("❌ Invalid Number. Action Cancelled.")
+        context.user_data['admin_action'] = None
+        return True
+
+# --- RESULT DECLARATION ---
 async def handle_market_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin enters the winning number"""
     query = update.callback_query
     market = query.data.split('|')[1]
-    
-    # Context hack to pass market to text handler, or use simpler buttons for 0-99 (Hard)
-    # Using a simplified approach: Admin picks range or we use command for precision
-    # Better: Ask Admin to type number via command, OR use buttons for random generation? 
-    # Let's use command prompt simulation via Text, but here for safety, let's ask to confirm.
-    
     context.user_data['resolving_market'] = market
-    await query.edit_message_text(f"⚠️ **Resolving: {market}**\n\nType the Winning Number (0-99) in chat using command:\n`/result {market} NUMBER`")
+    await query.edit_message_text(f"🏁 **Resolving: {market}**\n\nType the Winning Number (0-99) using command:\n`/result {market} NUMBER`")
 
-async def resolve_market(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    TRIGGERED BY COMMAND: /result DISAWAR 45
-    This is the heavy logic that pays winners automatically.
-    """
+async def resolve_market_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id): return
     
     try:
         market = context.args[0].upper()
         win_num = int(context.args[1])
     except:
-        await update.message.reply_text("❌ Usage: `/result MARKET_NAME NUMBER`")
+        await update.message.reply_text("❌ Usage: `/result MARKET NUMBER`")
         return
 
-    # 1. Get All Pending Bets
     bets = db.get_pending_bets("Horse", market)
-    if not bets:
-        await update.message.reply_text(f"ℹ️ No active bets for {market}.")
-        return
-
-    total_payout = 0
-    winners_count = 0
+    total_paid = 0
+    count = 0
     
-    await update.message.reply_text(f"🔄 Processing {len(bets)} bets for {market} (Win: {win_num})...")
-
     for bet in bets:
         uid = bet['user_id']
         amt = bet['amount']
-        bet_id = bet['_id']
         
         if bet['selection'] == win_num:
-            # WINNER
             win_amt = amt * settings.PAYOUTS['horse_win']
-            
-            # Loan Recovery Logic
-            user = db.get_user(uid, "")
-            loan = user.get('loan_amount', 0)
-            final_pay = win_amt
-            deducted = 0
-            
-            if loan > 0:
-                if win_amt >= loan:
-                    deducted = loan
-                    final_pay = win_amt - loan
-                    db.update_user(uid, {"loan_amount": 0})
-                else:
-                    deducted = win_amt
-                    final_pay = 0
-                    db.update_user(uid, None, inc_dict={"loan_amount": -deducted})
-
-            # Credit User
-            if final_pay > 0:
-                db.update_user(uid, None, inc_dict={"xp": final_pay}, transaction=f"Win {market} #{win_num}")
-            
-            db.mark_bet_processed(bet_id, "won")
-            
-            # Notify Winner
-            try:
-                msg = f"🎉 **JACKPOT! {market} Result: {win_num}**\n💰 Won: {win_amt} XP\n📉 Loan Deducted: {deducted}\n💵 **Net:** {final_pay} XP"
-                await context.bot.send_message(uid, msg, parse_mode='Markdown')
+            db.update_user(uid, None, inc_dict={"xp": win_amt}, transaction=f"Won {market}")
+            db.mark_bet_processed(bet['_id'], "won")
+            try: await context.bot.send_message(uid, f"🎉 **YOU WON!**\nMarket: {market}\nNumber: {win_num}\nWon: {win_amt} XP")
             except: pass
-            
-            total_payout += win_amt
-            winners_count += 1
+            total_paid += win_amt
+            count += 1
         else:
-            # LOSER
-            db.mark_bet_processed(bet_id, "lost")
-
-    await update.message.reply_text(f"✅ **RESULT DECLARED!**\n🏆 Winner #: {win_num}\n👥 Winners: {winners_count}\n💸 Total Paid: {total_payout} XP")
-
-# --- OTHER COMMANDS ---
-async def add_xp_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    try:
-        uid = int(context.args[0])
-        amt = int(context.args[1])
-        db.update_user(uid, None, inc_dict={"xp": amt, "total_deposit": amt}, transaction="Admin Deposit")
-        await update.message.reply_text(f"✅ Added {amt} XP to {uid}")
-        await context.bot.send_message(uid, f"💰 Admin added {amt} XP to your wallet.")
-    except Exception as e:
-        await update.message.reply_text("Usage: `/addxp UID AMOUNT`")
-
-async def broadcast_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id): return
-    msg = " ".join(context.args)
-    # Note: Broadcasting to thousands requires a queue in production. Simple loop here.
-    # In real production, use db.users_collection.find()
-    await update.message.reply_text("📢 Broadcast Started...")
+            db.mark_bet_processed(bet['_id'], "lost")
+            
+    await update.message.reply_text(f"✅ **RESULT DECLARED: {market}**\n🏆 Winner: {win_num}\n👥 Winners: {count}\n💰 Paid: {total_paid} XP")
