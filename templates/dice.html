@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Neon Dice</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { background: #000; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; margin: 0; }
+        .scene { width: 100px; height: 100px; perspective: 600px; margin-bottom: 50px; }
+        .cube { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; transition: transform 1s; }
+        .face { position: absolute; width: 100px; height: 100px; border: 2px solid #0f0; background: rgba(0, 255, 0, 0.1); box-shadow: 0 0 20px #0f0; display: flex; align-items: center; justify-content: center; font-size: 40px; font-weight: bold; color: #0f0; }
+        .front  { transform: rotateY(0deg) translateZ(50px); }
+        .back   { transform: rotateY(180deg) translateZ(50px); }
+        .right  { transform: rotateY(90deg) translateZ(50px); }
+        .left   { transform: rotateY(-90deg) translateZ(50px); }
+        .top    { transform: rotateX(90deg) translateZ(50px); }
+        .bottom { transform: rotateX(-90deg) translateZ(50px); }
+        button { background: #0f0; border: none; padding: 15px 40px; font-size: 20px; border-radius: 30px; cursor: pointer; box-shadow: 0 0 15px #0f0; font-weight: bold; }
+        h2 { color: #0f0; text-shadow: 0 0 10px #0f0; }
+    </style>
+</head>
+<body>
+    <h2 id="result">ROLL THE DICE</h2>
+    <div class="scene">
+        <div class="cube" id="cube">
+            <div class="face front">1</div>
+            <div class="face back">6</div>
+            <div class="face right">3</div>
+            <div class="face left">4</div>
+            <div class="face top">2</div>
+            <div class="face bottom">5</div>
+        </div>
+    </div>
+    <button onclick="rollDice()" id="rollBtn">ROLL</button>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        const userId = tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : 0;
+        const cube = document.getElementById('cube');
+        
+        function rollDice() {
+            document.getElementById('rollBtn').disabled = true;
+            const x = Math.floor(Math.random() * 4) * 90;
+            const y = Math.floor(Math.random() * 4) * 90;
+            const roll = Math.floor(Math.random() * 6) + 1;
+            
+            cube.style.transform = `rotateX(${x + 720}deg) rotateY(${y + 720}deg)`;
+            
+            setTimeout(() => {
+                document.getElementById('result').innerText = "YOU ROLLED: " + roll;
+                if(roll >= 4) {
+                    let win = roll * 5; // e.g., Roll 6 = 30 XP
+                    fetch('/api/claim_win', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ user_id: userId, amount: win, game_name: 'Dice' })
+                    });
+                    tg.showAlert(`🎉 You Won ${win} XP!`);
+                }
+                else tg.showAlert(`❌ You Lost!`);
+                document.getElementById('rollBtn').disabled = false;
+            }, 1000);
+        }
+    </script>
+</body>
+</html>

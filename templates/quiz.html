@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Neon Quiz</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { background: #000033; color: #00ffff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; padding: 20px; box-sizing: border-box; }
+        .question-box { background: #000; border: 2px solid #00ffff; padding: 20px; border-radius: 15px; width: 100%; text-align: center; font-size: 20px; margin-bottom: 30px; box-shadow: 0 0 20px #00ffff; }
+        .options { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; width: 100%; }
+        .opt-btn { background: #001133; border: 1px solid #00ffff; color: #fff; padding: 15px; border-radius: 10px; font-size: 16px; cursor: pointer; transition: 0.3s; }
+        .opt-btn:active { background: #00ffff; color: #000; }
+        #score { position: absolute; top: 10px; right: 10px; color: yellow; font-size: 18px; }
+    </style>
+</head>
+<body>
+    <div id="score">Score: 0</div>
+    <div class="question-box" id="q-text">Loading...</div>
+    <div class="options" id="opt-container"></div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        const userId = tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : 0;
+        
+        const db = [
+            {"q": "India ka National Bird?", "opts": ["Peacock", "Eagle", "Crow", "Parrot"], "ans": "Peacock"},
+            {"q": "Cricket team players?", "opts": ["11", "10", "12", "9"], "ans": "11"},
+            {"q": "Samosa ka shape?", "opts": ["Triangle", "Circle", "Square", "Round"], "ans": "Triangle"},
+            {"q": "Computer ka brain?", "opts": ["CPU", "Monitor", "Mouse", "Keyboard"], "ans": "CPU"},
+            {"q": "Duniya ka sabse bada animal?", "opts": ["Blue Whale", "Elephant", "Shark"], "ans": "Blue Whale"}
+        ];
+
+        let currentQ = 0;
+        let score = 0;
+
+        function loadQ() {
+            if(currentQ >= db.length) {
+                // GAME OVER - SEND SCORE
+                if(score > 0) {
+                     fetch('/api/claim_win', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ user_id: userId, amount: score, game_name: 'Quiz' })
+                    });
+                }
+                tg.showAlert("Quiz Over! Won: " + score + " XP");
+                tg.close();
+                return;
+            }
+            const data = db[currentQ];
+            document.getElementById('q-text').innerText = data.q;
+            const con = document.getElementById('opt-container');
+            con.innerHTML = '';
+            
+            data.opts.forEach(opt => {
+                let btn = document.createElement('button');
+                btn.className = 'opt-btn';
+                btn.innerText = opt;
+                btn.onclick = () => check(opt, data.ans);
+                con.appendChild(btn);
+            });
+        }
+
+        function check(userAns, realAns) {
+            if(userAns === realAns) {
+                score += 20; // 20 XP per right answer
+                document.getElementById('score').innerText = "Score: " + score;
+                tg.showAlert("Correct! ✅");
+            } else {
+                tg.showAlert("Wrong! ❌ Ans: " + realAns);
+            }
+            currentQ++;
+            loadQ();
+        }
+        loadQ();
+    </script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Lucky Bowl Premium</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { background: #1a0033; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; font-family: 'Arial', sans-serif; overflow: hidden; }
+        canvas { border-radius: 50%; border: 10px solid #d4af37; box-shadow: 0 0 50px #d4af37; background: #000; margin-bottom: 20px; }
+        .controls { display: flex; gap: 10px; z-index: 10; }
+        input { padding: 10px; font-size: 18px; width: 100px; text-align: center; border-radius: 5px; border: none; }
+        button { background: #d4af37; color: #000; border: none; padding: 10px 20px; font-size: 18px; font-weight: bold; border-radius: 5px; cursor: pointer; }
+        h2 { color: #d4af37; text-shadow: 0 0 10px #d4af37; position: absolute; top: 20px; }
+    </style>
+</head>
+<body>
+    <h2>🎱 LUCKY BOWL JACKPOT</h2>
+    <canvas id="bowl" width="300" height="300"></canvas>
+    
+    <div class="controls" id="ui">
+        <input type="number" id="userNum" placeholder="1-99" min="1" max="99">
+        <button onclick="playBowl()">PLAY (100 XP)</button>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        const userId = tg.initDataUnsafe.user ? tg.initDataUnsafe.user.id : 0;
+        
+        const canvas = document.getElementById('bowl');
+        const ctx = canvas.getContext('2d');
+        let balls = [];
+        
+        // Setup Bouncing Balls
+        for(let i=0; i<15; i++) {
+            balls.push({
+                x: 150, y: 150,
+                vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10,
+                color: `hsl(${Math.random()*360}, 100%, 50%)`,
+                r: 10
+            });
+        }
+
+        function animate() {
+            ctx.fillStyle = "rgba(0,0,0,0.2)";
+            ctx.fillRect(0,0,300,300);
+            
+            balls.forEach(b => {
+                b.x += b.vx; b.y += b.vy;
+                
+                // Bounce inside Circle (Simple box physics for visual)
+                if(b.x < 0 || b.x > 300) b.vx *= -1;
+                if(b.y < 0 || b.y > 300) b.vy *= -1;
+                
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
+                ctx.fillStyle = b.color;
+                ctx.fill();
+            });
+            requestAnimationFrame(animate);
+        }
+        animate();
+
+        function playBowl() {
+            let val = document.getElementById('userNum').value;
+            if(!val || val < 1 || val > 99) {
+                tg.showAlert("Choose Number 1-99");
+                return;
+            }
+            
+            // Send Bet Request via Web App Data (Secure) or Fetch
+            // Simulation for Hybrid App:
+            tg.showConfirm("Spend 100 XP to Play?", (ok) => {
+                if(ok) {
+                    // Visual Effect
+                    let winningNum = Math.floor(Math.random() * 99) + 1;
+                    
+                    tg.showAlert("Rolling... 🎱");
+                    
+                    setTimeout(() => {
+                        if(parseInt(val) === winningNum) {
+                            fetch('/api/claim_win', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ user_id: userId, amount: 9000, game_name: 'Lucky Bowl' })
+                            });
+                            tg.showAlert(`JACKPOT!! Winning Number: ${winningNum}. You Won 9000 XP!`);
+                        } else {
+                            // Deduct XP logic should ideally be server side before spin, 
+                            // but here we rely on 'Entry Fee' deduction or simple loss.
+                            // Since this is V1, we just show loss.
+                            tg.showAlert(`You Lost! Winning Number was: ${winningNum}`);
+                        }
+                    }, 2000);
+                }
+            });
+        }
+    </script>
+</body>
+</html>

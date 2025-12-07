@@ -5,3 +5,10 @@ flask
 gunicorn
 anyio
 pytz
+python-telegram-bot==21.9
+pymongo
+certifi
+python-dotenv
+flask
+requests
+pytz

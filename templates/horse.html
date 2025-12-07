@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Luck with Horse</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { background: #051a05; color: #00ff00; font-family: monospace; display: flex; flex-direction: column; align-items: center; padding: 10px; }
+        h1 { margin: 10px 0; text-shadow: 0 0 10px #0f0; }
+        .grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 5px; width: 100%; max-width: 400px; }
+        .cell { background: #003300; border: 1px solid #005500; padding: 10px; text-align: center; cursor: pointer; border-radius: 4px; }
+        .cell.selected { background: #00ff00; color: #000; box-shadow: 0 0 10px #00ff00; }
+        .controls { position: fixed; bottom: 0; width: 100%; background: #002200; padding: 15px; display: flex; gap: 10px; justify-content: center; box-shadow: 0 -5px 20px #000; }
+        input { background: #000; border: 1px solid #0f0; color: #0f0; padding: 10px; width: 80px; text-align: center; font-size: 16px; }
+        button { background: #0f0; color: #000; border: none; padding: 10px 20px; font-weight: bold; cursor: pointer; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <h1>🐎 HORSE BETTING</h1>
+    <div style="font-size:12px; margin-bottom:10px;">Select Number (0-99)</div>
+    
+    <div class="grid" id="grid"></div>
+    <div style="height: 80px;"></div>
+
+    <div class="controls">
+        <input type="number" id="amount" placeholder="XP" min="50" value="50">
+        <button onclick="placeBet()">PLACE BET</button>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        
+        let selectedNum = null;
+        const grid = document.getElementById('grid');
+
+        // Generate 0-99 Grid
+        for(let i=0; i<100; i++) {
+            let d = document.createElement('div');
+            d.className = 'cell'; d.innerText = i;
+            d.onclick = () => select(i, d);
+            grid.appendChild(d);
+        }
+
+        function select(n, el) {
+            document.querySelectorAll('.cell').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            selectedNum = n;
+        }
+
+        function placeBet() {
+            if(selectedNum === null) { tg.showAlert("Please select a Horse Number!"); return; }
+            let amt = document.getElementById('amount').value;
+            if(amt < 50) { tg.showAlert("Minimum Bet is 50 XP!"); return; }
+
+            tg.showConfirm(`Bet ${amt} XP on Number ${selectedNum}?`, (ok) => {
+                if(ok) {
+                    const data = `bet_horse|${selectedNum}|${amt}`;
+                    tg.sendData(data); // Sends to Bot to Deduct
+                }
+            });
+        }
+    </script>
+</body>
+</html>
